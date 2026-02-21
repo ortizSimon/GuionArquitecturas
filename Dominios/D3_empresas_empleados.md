@@ -271,14 +271,16 @@ D3 ──asíncrono─► D8: eventos CompanyImported, EmployeeRefCreated/Update
 
 ## 3.10 Stack tecnológico recomendado para D3
 
+> Alineado con el stack global del proyecto (Sección 4). Proveedor de nube: **AWS** (`sa-east-1` como región primaria).
+
 | Componente | Tecnología propuesta | Justificación |
 |------------|---------------------|---------------|
-| API REST del dominio | Spring Boot (Java) / FastAPI (Python) | Madurez, integración con Kafka y Resilience4j |
-| Base de datos | PostgreSQL + cifrado columnar (pgcrypto) | Consistencia ACID, soporte JSON para `auth_config` |
-| Message Broker | Apache Kafka (Outbox Pattern) | Entrega garantizada de eventos a D8 |
-| Circuit Breaker | Resilience4j | Integración nativa con Spring Boot |
-| Batch / carga masiva | Spring Batch / Celery (Python) | Procesamiento por chunks, reintentos, informes |
-| Observabilidad | Micrometer + Prometheus + Grafana | Métricas de circuit breaker y latencia |
+| API REST del dominio | Java 21 + Spring Boot 3 en **Amazon EKS** (EC2 node groups) | Consistente con D4 y D7 (dominios financieros); madurez para ACID, integración nativa con Resilience4j |
+| Base de datos | **Amazon Aurora PostgreSQL** (Multi-AZ, Serverless v2) + **AWS KMS** (cifrado en reposo) | Aurora provee hasta 5× throughput de PostgreSQL estándar; KMS gestiona cifrado de columnas sensibles (`tax_id`, `auth_config`) sin pgcrypto propio |
+| Message Broker | **Amazon MSK** (Managed Streaming for Apache Kafka) — Outbox Pattern | Elimina gestión del plano de control de Kafka; integración nativa con IAM y CloudWatch; entrega garantizada de eventos a D8 |
+| Circuit Breaker | Resilience4j (librería) | Integración nativa con Spring Boot; métricas expuestas vía Micrometer → CloudWatch |
+| Batch / carga masiva | Spring Batch en EKS | Procesamiento por chunks, reintentos configurables, informe de resultado; mismo runtime que el servicio principal |
+| Observabilidad | Micrometer + **Amazon CloudWatch** + **Amazon Managed Grafana** + **AWS X-Ray** (via OpenTelemetry SDK) | Stack de observabilidad unificado con el resto del proyecto; CloudWatch recolecta métricas nativas de EKS y Aurora; X-Ray provee trazas distribuidas |
 
 ---
 

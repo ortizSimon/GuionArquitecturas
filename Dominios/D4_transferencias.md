@@ -319,7 +319,7 @@ El Dominio 4 es el **motor de movimiento de dinero** de la plataforma. Orquesta 
                   │                                     │                  │
                   │                        ┌────────────▼──────────────┐  │
                   │                        │   Transfer State Store      │  │
-                  │                        │   (PostgreSQL — ACID)       │  │
+                  │                        │   (Aurora PostgreSQL — ACID)│  │
                   │                        │   + Outbox Table            │  │
                   │                        └────────────┬──────────────┘  │
                   │                                     │                  │
@@ -340,16 +340,18 @@ El Dominio 4 es el **motor de movimiento de dinero** de la plataforma. Orquesta 
 
 ## 4.10 Stack tecnológico recomendado para D4
 
+> Alineado con el stack global del proyecto (Sección 4). Proveedor de nube: **AWS** (`sa-east-1` como región primaria).
+
 | Componente | Tecnología propuesta | Justificación |
 |------------|---------------------|---------------|
-| API REST | Spring Boot (Java) | Madurez en fintech, integración nativa con Resilience4j y Kafka |
-| Motor de saga | Spring State Machine / Axon Framework | Gestión explícita de estados y compensación |
-| Base de datos | PostgreSQL | ACID estricto para `transfer_saga_state` y `outbox`; particionamiento por fecha para histórico |
-| Caché antifraude | Redis | Latencia sub-milisegundo para consulta de listas, TTL configurable |
-| Message Broker | Apache Kafka | Exactly-once delivery, DLQ nativa, replay de eventos |
-| Circuit Breaker | Resilience4j | Integración Spring Boot, métricas Micrometer |
-| Observabilidad | OpenTelemetry + Jaeger | Trazas distribuidas multi-dominio para debugging de sagas |
-| Escalado | Kubernetes HPA | Escalado basado en métricas personalizadas (latencia, tamaño de cola) |
+| API REST | Java 21 + Spring Boot 3 en **Amazon EKS** (EC2 node groups) | D4 es dominio financiero crítico; EC2 node groups permiten elegir instancias optimizadas para cómputo; alineado con clasificación de Sección 4 para dominios D4/D7 |
+| Motor de saga | Axon Framework / Eventuate Tram (librería) | Gestión explícita de estados y compensación automática; integra con Spring Boot y Amazon MSK |
+| Base de datos | **Amazon Aurora PostgreSQL** (Multi-AZ, Serverless v2) + **AWS KMS** | ACID estricto para `transfer_saga_state` y `outbox`; failover automático < 30 s; cifrado en reposo con KMS |
+| Caché antifraude | **Amazon ElastiCache for Redis** (cluster mode, Multi-AZ) | Latencia sub-milisegundo para consulta de listas blanca/gris/negra; TTL configurable; replicación Multi-AZ con failover automático |
+| Message Broker | **Amazon MSK** (Managed Streaming for Apache Kafka) | Exactly-once delivery, DLQ nativa, replay de eventos; integración nativa con IAM y VPC sin gestión del plano de control |
+| Circuit Breaker | Resilience4j (librería) | Integración nativa con Spring Boot; métricas expuestas vía Micrometer → CloudWatch |
+| Observabilidad | OpenTelemetry SDK + **AWS X-Ray** + **Amazon CloudWatch** + **Amazon Managed Grafana** | X-Ray integra con API Gateway y EKS para trazas distribuidas de sagas; CloudWatch para métricas y logs; stack unificado con el resto del proyecto |
+| Escalado | **Amazon EKS** + HPA (métricas personalizadas via CloudWatch Adapter) | Escalado horizontal automático basado en latencia de cola y CPU; sin gestión de plano de control K8s |
 
 ---
 
