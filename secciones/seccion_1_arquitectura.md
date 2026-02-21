@@ -73,6 +73,24 @@ El sistema se divide en **8 dominios** derivados directamente del enunciado. Cad
 | **RNF dominante** | Seguridad, Disponibilidad |
 | **Observaciones** | Centraliza las políticas de autenticación exigidas por restricciones estatales. Proporciona el token que todos los demás dominios validan vía API Gateway. |
 
+
+Comunicación con otros dominios
+Expone:
+- Validación de identidad (login, token, MFA)
+- Autorización (roles/permisos, scopes)
+Lo consumen (síncrono):
+- D2 Usuarios y Cuentas (para consultar saldos/estados)
+- D4 Transferencias (para ejecutar transferencias)
+- D5 Billetera (para movimientos/pagos)
+- D7 Pagos Masivos (para operaciones empresariales)
+- D6 Integraciones (para autenticación entre servicios y claves/credenciales de integraciones)
+Comunicación recomendada:
+- Síncrona: validateToken(), authorize(action, subject)
+- Asíncrona (opcional): UserAuthenticated, SuspiciousLoginDetected → D8
+Eventos típicos (publica):
+- UserAuthenticated (opcional)
+- SuspiciousLoginDetected (opcional)
+
 ---
 
 ### Dominio 2 — Gestión de Usuarios y Cuentas
