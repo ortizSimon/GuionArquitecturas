@@ -30,6 +30,32 @@ La arquitectura se apoya en tres patrones complementarios:
 
 ## 1.2 Dominios identificados (Bounded Contexts)
 
+Los dominios se definen usando el concepto de **Bounded Context de Domain-Driven Design (DDD)**: cada dominio agrupa una responsabilidad de negocio bien delimitada, con su propio modelo de datos, su propia base de datos y sus propias reglas. Ningún otro dominio accede directamente a los datos de otro; la comunicación ocurre exclusivamente a través de eventos (Kafka) o contratos de API versionados.
+
+### Criterios de separación de dominios
+
+Un grupo de funcionalidades se separa en un dominio independiente cuando **al menos dos** de las siguientes condiciones se cumplen:
+
+| Criterio | Descripción |
+|----------|-------------|
+| **Actores distintos** | Los usuarios o sistemas que interactúan con él son diferentes a los de otros dominios (ej. empresas ≠ personas naturales) |
+| **Datos propios** | Posee datos que ningún otro dominio debería leer o escribir directamente |
+| **Evolución independiente** | Puede modificarse, versionarse o reemplazarse sin afectar al resto del sistema |
+| **Ciclo de vida distinto** | Tiene patrones de carga o disponibilidad diferentes (ej. nómina tiene picos predecibles; IAM opera de forma continua y uniforme) |
+
+### Trazabilidad: enunciado → dominio
+
+| Dominio | Origen directo en el enunciado |
+|---------|-------------------------------|
+| **D1 — IAM** | Sección 5 completa: autenticación, autorización, OWASP, listas negras/grises/blancas |
+| **D2 — Usuarios y Cuentas** | Punto 1a/1b: carga masiva de bancos, sincronización diaria, consulta de cuentas |
+| **D3 — Empresas y Empleados** | Punto 3 + 4a/4b: 15 empresas aliadas, referencia mínima de empleados |
+| **D4 — Transferencias** | Punto 2a: transferencias entre filiales, ACH, internacionales |
+| **D5 — Billetera Digital** | Punto 2b: billetera propia de Empresa X, pagos a terceros |
+| **D6 — Integraciones** | Punto 2b-iii + requisito explícito: PSE, DRUO, Apple Pay, terceros a demanda sin afectar el sistema |
+| **D7 — Pagos Masivos** | Punto 3 + punto 4: nómina empresarial, 20K–30K tx en fechas específicas |
+| **D8 — Auditoría** | Punto 4 general + puntos regulatorios 2/3: histórico, extracto trimestral, reporte Superfinanciera |
+
 El sistema se divide en **8 dominios** derivados directamente del enunciado. Cada dominio es implementado como uno o más microservicios cohesionados.
 
 ---
