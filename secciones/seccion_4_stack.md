@@ -96,6 +96,27 @@ La siguiente tabla mapea cada capa del sistema a su tecnología recomendada. **P
 
 ---
 
+### 4.9 Detalle de stack — D5: Billetera Digital
+
+| Componente | Tecnología | Alternativa | Por qué se eligió | RNF vinculado |
+|---|---|---|---|---|
+| **Base de datos del ledger** | **Aurora PostgreSQL** (tabla `wallet_entries`, solo se insertan registros, nunca se modifican) | PostgreSQL propio en contenedor | Aurora garantiza alta disponibilidad y recuperación automática ante fallos. Al no permitir modificar registros, el historial de movimientos nunca se puede alterar. | RNF-D5-01 |
+| **Coordinador de la Saga** | **NestJS** con consumidores Kafka (mismo lenguaje que el resto de D5) | Eventuate Tram (Java) | Orquesta los pasos del pago: débita la billetera → espera respuesta de D6 → si falla, revierte el débito automáticamente. Usa el mismo stack Node.js del dominio para no agregar complejidad tecnológica. | RNF-D5-02 |
+| **Control de operaciones duplicadas** | **ElastiCache Redis** (guarda un identificador único por operación durante 24 h) | Restricción `UNIQUE` directamente en Aurora | Si el usuario o la red reintenta una misma operación, Redis la detecta y la rechaza antes de tocar la base de datos, evitando dobles débitos. | RNF-D5-01, RNF-D5-02 |
+
+---
+
+### 4.10 Detalle de stack — D6: Integraciones y Pasarelas de Pago
+
+| Componente | Tecnología | Alternativa | Por qué se eligió | RNF vinculado |
+|---|---|---|---|---|
+| **Registro de pasarelas (Adapter Registry)** | **NestJS con patrón Strategy** (cada pasarela es un módulo independiente que se activa/desactiva en caliente) | Spring Cloud (Java) | Permite agregar o quitar una pasarela (por ejemplo, un nuevo proveedor de pagos) sin apagar el servicio. La configuración de qué pasarelas están activas se guarda en Aurora. | RNF-D6-02 |
+| **Aislamiento de fallos por pasarela** | **`opossum`** (circuit breaker para Node.js), una instancia por cada pasarela | Resilience4j (Java) | Si PSE falla repetidamente, solo se corta el circuito de PSE; DRUO, ACH y Apple Pay siguen funcionando con normalidad. Es la librería de circuit breaker más usada en el ecosistema Node.js. | RNF-D6-01 |
+| **Pruebas de integración sin depender de externos** | **OpenAPI 3.x** (contrato de cada pasarela) + **WireMock** (simula PSE, DRUO, ACH en el pipeline de CI) | Pact | Los tests de integración corren en CI sin necesitar conexión real a PSE o ACH. El contrato OpenAPI detecta automáticamente si una pasarela cambió su API. | RNF-D6-01, RNF-D6-02 |
+| **Credenciales de cada pasarela** | **AWS Secrets Manager** (una clave por pasarela, rotación automática) | HashiCorp Vault | Las claves de API de PSE, DRUO, ACH y Apple Pay se rotan automáticamente sin reiniciar ningún pod. Si se revoca una pasarela, sus credenciales no afectan a las demás. | RNF-D6-01 |
+
+---
+
 ### Nota sobre soberanía de datos
 
 AWS no cuenta con región en Colombia; la región más cercana es `sa-east-1` (São Paulo, Brasil). Para los datos de autenticación (Keycloak) y transaccionales críticos, se recomienda verificar con la Superintendencia Financiera si el alojamiento en Brasil cumple los requisitos de soberanía de datos, o evaluar la opción de mantener componentes sensibles en infraestructura on-premise con conectividad AWS Direct Connect.

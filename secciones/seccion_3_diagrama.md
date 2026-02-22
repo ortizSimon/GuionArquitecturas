@@ -148,6 +148,136 @@ C4Container
 
 ---
 
+## Figura 2 — Detalle interno de D5 (Billetera Digital)
+
+Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D5 y sus canales de comunicación con el resto del sistema.
+
+```mermaid
+graph LR
+    %% ── Entradas (izquierda) ──────────────────────────────────────
+    GW["API Gateway"]
+    D1["D1: IAM"]
+    D2["D2: Usuarios"]
+
+    %% ── D5: Billetera Digital (centro) ───────────────────────────
+    subgraph D5["D5 — Billetera Digital"]
+        direction TB
+        WalletAPI["Wallet API\n(REST)"]
+        WalletService["Wallet Service\n(lógica de negocio)"]
+        SagaCoord["Saga Coordinator\n(compensación)"]
+        WalletDB[("wallet_entries\nAurora PostgreSQL\nappend-only")]
+
+        WalletAPI --> WalletService
+        WalletService --> SagaCoord
+        WalletService --> WalletDB
+    end
+
+    %% ── Salidas (derecha) ─────────────────────────────────────────
+    KAFKA["Kafka\n(Message Broker)"]
+    D6["D6: Integraciones"]
+    D8["D8: Auditoría"]
+
+    %% ── Eventos entrantes desde Kafka ─────────────────────────────
+    KIN["Kafka\n(eventos entrantes)"]
+    KIN -->|"PaymentGatewayResult\n(desde D6)"| WalletService
+    KIN -->|"TransferACHResolved\n(desde D4)"| WalletService
+
+    %% ── Conexiones entrantes síncronas ────────────────────────────
+    GW -->|"HTTPS"| WalletAPI
+    D1 -->|"validateToken()"| WalletAPI
+    D2 -->|"saldo combinado"| WalletService
+
+    %% ── Conexiones salientes ──────────────────────────────────────
+    SagaCoord -->|"ThirdPartyPaymentInitiated"| KAFKA
+    WalletService -->|"WalletDebited\nWalletCredited\nWalletCompensationTriggered"| KAFKA
+    KAFKA --> D6
+    KAFKA --> D8
+```
+
+### Descripción de componentes — D5
+
+| Componente | Responsabilidad |
+|---|---|
+| **Wallet API** | Punto de entrada REST para operaciones de billetera (acreditar, debitar, consultar saldo, pagar a tercero). Valida el token con D1 antes de procesar. |
+| **Wallet Service** | Lógica de negocio: verifica saldo disponible, escribe en `wallet_entries` con doble entrada, publica eventos en Kafka. |
+| **Saga Coordinator** | Coordina el flujo de pago a tercero: débito → solicitud a D6 → confirmación o compensación automática ante fallo de pasarela (RNF-D5-02). |
+| **wallet_entries (Aurora)** | Tabla append-only con columnas `debit` / `credit`. Fuente de verdad del saldo — nunca se modifica ni elimina (RNF-D5-01). |
+
+**Comunicación clave:**
+- **Entrante síncrono:** API Gateway (usuario), D1 (autorización), D2 (saldo combinado)
+- **Entrante asíncrono (Kafka):** `PaymentGatewayResult` desde D6, `TransferACHResolved` desde D4
+- **Saliente asíncrono (Kafka):** `WalletDebited`, `WalletCredited`, `ThirdPartyPaymentInitiated`, `WalletCompensationTriggered` → consumidos por D6 y D8
+
+---
+
+## Figura 3 — Detalle interno de D6 (Integraciones y Pasarelas de Pago)
+
+Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D6 y sus canales de comunicación con el resto del sistema.
+
+```mermaid
+graph LR
+    %% ── Entradas (izquierda) ──────────────────────────────────────
+    KAFKA_IN["Kafka\n(eventos entrantes)"]
+    KAFKA_IN -->|"ThirdPartyPaymentInitiated\n(desde D5)"| AdapterRegistry
+    KAFKA_IN -->|"MassivePaymentDispatched\n(desde D7)"| AdapterRegistry
+
+    %% ── D6: Integraciones y Pasarelas (centro) ────────────────────
+    subgraph D6["D6 — Integraciones y Pasarelas de Pago"]
+        direction TB
+        AdapterRegistry["Adapter Registry\n(registro dinámico)"]
+        CircuitBreaker["Circuit Breaker\n(instancia por adapter)"]
+        PSEAdapter["PSE Adapter"]
+        DRUOAdapter["DRUO Adapter"]
+        AppleAdapter["Apple Pay Adapter"]
+        ACHAdapter["ACH Adapter"]
+        PluginAdapter["Adapter Tercero\n(plug-and-play)"]
+
+        AdapterRegistry --> CircuitBreaker
+        CircuitBreaker --> PSEAdapter
+        CircuitBreaker --> DRUOAdapter
+        CircuitBreaker --> AppleAdapter
+        CircuitBreaker --> ACHAdapter
+        CircuitBreaker --> PluginAdapter
+    end
+
+    %% ── Sistemas externos (derecha) ───────────────────────────────
+    PSE["PSE"]
+    DRUO["DRUO"]
+    APPLE["Apple Pay"]
+    ACH["ACH"]
+    TERCEROS["Terceros\n(servicios, impuestos…)"]
+
+    PSEAdapter <-->|"HTTPS + TLS 1.3"| PSE
+    DRUOAdapter <-->|"HTTPS + TLS 1.3"| DRUO
+    AppleAdapter <-->|"HTTPS + TLS 1.3"| APPLE
+    ACHAdapter <-->|"HTTPS + TLS 1.3"| ACH
+    PluginAdapter <-->|"HTTPS + TLS 1.3"| TERCEROS
+
+    %% ── Salidas (abajo) ───────────────────────────────────────────
+    KAFKA_OUT["Kafka\n(eventos salientes)"]
+    D8["D8: Auditoría"]
+
+    AdapterRegistry -->|"PaymentGatewayResult\nACHResponseReceived"| KAFKA_OUT
+    AdapterRegistry -->|"logs, latencias, errores"| D8
+```
+
+### Descripción de componentes — D6
+
+| Componente | Responsabilidad |
+|---|---|
+| **Adapter Registry** | Registro dinámico de adapters activos. Recibe eventos de Kafka, selecciona el adapter correcto y lo invoca. Nuevos adapters se registran en caliente sin reiniciar el servicio (RNF-D6-02). |
+| **Circuit Breaker** | Instancia independiente por adapter. Ante errores consecutivos de una pasarela abre el circuito y detiene solicitudes a esa pasarela sin afectar a las demás (RNF-D6-01). |
+| **PSE / DRUO / Apple Pay / ACH Adapters** | Traducen el contrato interno del sistema al protocolo de cada pasarela. Manejan reintentos, timeouts e idempotencia del payload. |
+| **Adapter Tercero (plug-and-play)** | Plantilla para nuevas integraciones. Se despliega como contenedor independiente y se registra en el Adapter Registry sin modificar los adapters existentes. |
+
+**Comunicación clave:**
+- **Entrante asíncrono (Kafka):** `ThirdPartyPaymentInitiated` (desde D5), `MassivePaymentDispatched` (desde D7)
+- **Saliente externo:** llamadas HTTPS/TLS 1.3 a PSE, DRUO, Apple Pay, ACH y terceros; recibe callbacks de resultado
+- **Saliente asíncrono (Kafka):** `PaymentGatewayResult`, `ACHResponseReceived` → consumidos por D5 y D4
+- **Saliente a D8:** logs de integración, latencias, errores y reintentos para auditoría
+
+---
+
 ## Pendientes
 
 - [ ] Renderizar el diagrama Mermaid y adjuntar imagen en el reporte final (usar mermaid.live o plugin VS Code)
