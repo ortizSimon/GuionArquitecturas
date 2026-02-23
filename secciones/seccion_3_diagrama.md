@@ -148,7 +148,140 @@ C4Container
 
 ---
 
-## Figura 2 — Detalle interno de D5 (Billetera Digital)
+
+---
+
+## Figura 2 — Detalle interno de D3 (Empresas y Empleados)
+
+Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D3 y sus canales de comunicación con el resto del sistema.
+
+```mermaid
+graph LR
+    %% ── Entradas (izquierda) ──────────────────────────────────────
+    Admin["Administrador\n(portal admin)"]
+    D7["D7: Pagos Masivos"]
+    D1["D1: IAM"]
+
+    %% ── D3: Empresas y Empleados (centro) ─────────────────────────
+    subgraph D3["D3 — Empresas y Empleados"]
+        direction TB
+        CompanyAPI["Company API\n(REST — carga / calendarios)"]
+        EmployeeRefAPI["Employee Ref API\n(REST — stub mínimo)"]
+        BatchJob["Spring Batch\n(carga masiva idempotente)"]
+        D3DB[("Aurora PostgreSQL\nCompany / EmployeeRef\nPayrollSchedule")]
+        Outbox["Outbox → Kafka Publisher"]
+
+        CompanyAPI --> BatchJob
+        CompanyAPI --> D3DB
+        EmployeeRefAPI --> D3DB
+        BatchJob --> D3DB
+        D3DB --> Outbox
+    end
+
+    %% ── Salidas (derecha) ─────────────────────────────────────────
+    KAFKA["Kafka\n(Message Broker)"]
+    D6["D6: Integraciones"]
+    D8["D8: Auditoría"]
+
+    %% ── Conexiones entrantes ──────────────────────────────────────
+    Admin -->|"HTTPS — carga de empresas"| CompanyAPI
+    D7 -->|"GET empleados activos"| EmployeeRefAPI
+    D1 -->|"validateToken()"| CompanyAPI
+
+    %% ── Resolución síncrona de datos del empleado ─────────────────
+    EmployeeRefAPI -->|"resolve employee\n(vía D6 → API empresa)"| D6
+
+    %% ── Salidas asíncronas (Outbox → Kafka) ──────────────────────
+    Outbox -->|"CompanyImported\nEmployeeRefCreated/Updated"| KAFKA
+    KAFKA --> D8
+```
+
+### Descripción de componentes — D3
+
+| Componente | Responsabilidad |
+|---|---|
+| **Company API** | Punto de entrada REST para el registro y carga masiva de empresas aliadas. Recibe el archivo estructurado, delega la importación a Spring Batch y gestiona el calendario de nómina por empresa. |
+| **Employee Ref API** | Gestiona el stub mínimo del empleado (`employee_ref_id`, `company_id`, `status`). Responde consultas de D7 (lista de empleados activos). Para resolver datos completos en tiempo de pago, invoca D6 sincrónicamente; D6 llama al API de la empresa aliada y retorna los datos en memoria (sin persistirlos). |
+| **Spring Batch** | Procesa la carga masiva en chunks de 500 registros con commit transaccional por chunk e idempotencia (`upsert` por `external_emp_id + company_id`). Genera informe de resultado (OK / rechazados / erróneos) mediante el evento `CompanyImported`. |
+| **Aurora PostgreSQL (D3)** | Almacena `Company`, `EmployeeRef` y `PayrollSchedule`. Los campos sensibles (`tax_id`, `auth_config`) están cifrados en reposo con AWS KMS. No contiene ninguna columna de PII de empleados (RNF-D3-03). |
+| **Outbox → Kafka** | Garantiza entrega *at-least-once* de eventos a D8 (`CompanyImported`, `EmployeeRefCreated/Updated`) dentro de la misma transacción ACID de la operación que los origina, evitando pérdida de eventos ante fallos. |
+
+**Comunicación clave:**
+- **Entrante síncrono:** Admin (carga de empresas), D7 (consulta empleados activos), D1 (autorización)
+- **Saliente síncrono a D6:** Employee Ref API invoca D6 para resolver datos completos del empleado en tiempo real; D6 llama al API de la empresa aliada y retorna los datos a D3 en memoria (sin persistirlos)
+- **Saliente asíncrono (Kafka):** `CompanyImported`, `EmployeeRefCreated/Updated` → consumidos por D8
+
+---
+
+## Figura 3 — Detalle interno de D4 (Transferencias y Transacciones)
+
+Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D4 y sus canales de comunicación con el resto del sistema.
+
+```mermaid
+graph LR
+    %% ── Entradas (izquierda) ──────────────────────────────────────
+    Client["Cliente\n(web / móvil)"]
+    D1["D1: IAM"]
+    D2["D2: Cuentas"]
+    RedisCache[("Redis Cache\nlistas B/G/N\nTTL 60 s")]
+
+    %% ── D4: Transferencias y Transacciones (centro) ────────────────
+    subgraph D4["D4 — Transferencias y Transacciones"]
+        direction TB
+        TransferAPI["Transfer API\n(REST)"]
+        FraudChecker["FraudChecker\n(listas B/G/N)"]
+        LiquidationRouter["LiquidationRouter\n(filial → inmediata\nno filial → ACH)"]
+        SagaOrch["Saga Orchestrator\n(débito / crédito / compensación)"]
+        StateStore[("Transfer State Store\nAurora PostgreSQL — ACID\n+ Outbox Table")]
+
+        TransferAPI --> FraudChecker
+        FraudChecker --> LiquidationRouter
+        LiquidationRouter --> SagaOrch
+        SagaOrch --> StateStore
+    end
+
+    %% ── Salidas (derecha) ─────────────────────────────────────────
+    KAFKA["Kafka\n(Message Broker)"]
+    D6["D6: Integraciones"]
+    D8["D8: Auditoría"]
+    D5["D5: Billetera"]
+
+    %% ── Conexiones entrantes síncronas ────────────────────────────
+    Client -->|"HTTPS — POST /transfers"| TransferAPI
+    D1 -->|"validateToken()"| TransferAPI
+    D2 -->|"saldo / límites"| TransferAPI
+    RedisCache --> FraudChecker
+
+    %% ── Comunicación con D6 (ACH) ─────────────────────────────────
+    SagaOrch -->|"envío a ACH"| D6
+    D6 -->|"ACHResponseReceived"| SagaOrch
+
+    %% ── Salidas asíncronas (Outbox → Kafka) ──────────────────────
+    StateStore -->|"TransferInitiated / TransferApproved\nTransferSettled / TransferFailed\nFraudCheckFlagged"| KAFKA
+    KAFKA --> D8
+    KAFKA --> D2
+    KAFKA --> D5
+```
+
+### Descripción de componentes — D4
+
+| Componente | Responsabilidad |
+|---|---|
+| **Transfer API** | Punto de entrada REST para instrucciones de transferencia (P2P, interbancaria, múltiples destinos). Valida token con D1 y consulta saldo/límites en D2. Retorna confirmación al usuario al llegar a estado `APPROVED`, sin esperar la liquidación. |
+| **FraudChecker** | Evalúa en tiempo real las listas blanca/gris/negra desde la caché Redis (TTL 60 s). Lista negra → `REJECTED` inmediato; lista gris → aprueba con flag y alerta a D8/D1; lista blanca → flujo normal (RNF-D4-05). |
+| **LiquidationRouter** | Determina el canal de liquidación consultando el registro de bancos filiales (caché Redis, TTL 5 min). Destino filial → `SETTLING` inmediato; destino no filial/internacional → `SENT_TO_ACH` diferido vía ACH (RNF-D4-02). |
+| **Saga Orchestrator** | Coordina los pasos del pago (débito en D2, liquidación, crédito en destino) con compensación automática ante cualquier fallo. Registra el progreso en `transfer_saga_state` con lock optimista para evitar race conditions (RNF-D4-01). |
+| **Transfer State Store (Aurora)** | Almacena el estado ACID de cada transacción y la tabla outbox. Las transacciones en estado `SETTLED` son inmutables; las devoluciones son nuevas transferencias inversas. La tabla outbox garantiza publicación de eventos con la misma transacción ACID. |
+
+**Comunicación clave:**
+- **Entrante síncrono:** Cliente (instrucción de transferencia), D1 (autorización), D2 (saldo y límites), Redis (listas antifraude)
+- **Entrante asíncrono:** `ACHResponseReceived` desde D6 → Saga Orchestrator transiciona estado de `SENT_TO_ACH` a `SETTLED` o `FAILED`
+- **Saliente síncrono:** Saga Orchestrator → D6 para envío de transferencia a ACH
+- **Saliente asíncrono (Kafka):** `TransferInitiated`, `TransferApproved`, `TransferSettled`, `TransferFailed`, `FraudCheckFlagged` → consumidos por D8 (auditoría), D2 (ajuste de saldo), D5 (si billetera es destino)
+
+
+
+## Figura 4 — Detalle interno de D5 (Billetera Digital)
 
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D5 y sus canales de comunicación con el resto del sistema.
 
@@ -210,7 +343,7 @@ graph LR
 
 ---
 
-## Figura 3 — Detalle interno de D6 (Integraciones y Pasarelas de Pago)
+## Figura 5 — Detalle interno de D6 (Integraciones y Pasarelas de Pago)
 
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D6 y sus canales de comunicación con el resto del sistema.
 
@@ -275,6 +408,8 @@ graph LR
 - **Saliente externo:** llamadas HTTPS/TLS 1.3 a PSE, DRUO, Apple Pay, ACH y terceros; recibe callbacks de resultado
 - **Saliente asíncrono (Kafka):** `PaymentGatewayResult`, `ACHResponseReceived` → consumidos por D5 y D4
 - **Saliente a D8:** logs de integración, latencias, errores y reintentos para auditoría
+
+
 
 ---
 
