@@ -96,7 +96,28 @@ La siguiente tabla mapea cada capa del sistema a su tecnología recomendada. **P
 
 ---
 
-### 4.9 Detalle de stack — D5: Billetera Digital
+### 4.9 Detalle de stack — D3: Empresas y Empleados
+
+| Componente | Tecnología | Alternativa | Por qué se eligió | RNF vinculado |
+|---|---|---|---|---|
+| **Carga masiva de empresas y empleados** | **Spring Batch** en EKS (mismo runtime Java/Spring Boot del servicio) | AWS Glue (ETL serverless) | Procesamiento en chunks de 500 registros con commit transaccional por chunk, reintentos configurables e idempotencia nativa (`upsert` por `external_emp_id + company_id`). Reutiliza el runtime del servicio sin infraestructura adicional. AWS Glue simplifica el ETL pero no ofrece el nivel de control transaccional requerido para garantizar idempotencia a nivel de registro. | RNF-D3-02 |
+| **Cifrado de campos sensibles de empresa** | **AWS KMS** (cifrado por columna en Aurora para `tax_id` y `auth_config`) | Cifrado solo a nivel de disco | `tax_id` (NIT de la empresa) y `auth_config` (credenciales del API de la empresa aliada) se cifran por columna: incluso con acceso al disco, los campos críticos requieren la clave KMS para descifrarse. Garantiza minimización de PII sin alterar el esquema relacional. | RNF-D3-03 |
+| **Circuit Breaker por empresa aliada** | **Resilience4j** (instancia independiente por empresa, integrado en Spring Boot) | Istio (nivel de malla de red) | Cada empresa aliada tiene su propio circuito con umbral de error y tiempo de apertura configurables. Ante caída del API de empresa X, el circuito de X se abre y su lote queda en `PAUSED_API_ERROR` sin afectar a las otras 14 empresas. Istio actúa a nivel de red con menor granularidad por empresa aliada. | RNF-D3-01 |
+
+---
+
+### 4.10 Detalle de stack — D4: Transferencias y Transacciones
+
+| Componente | Tecnología | Alternativa | Por qué se eligió | RNF vinculado |
+|---|---|---|---|---|
+| **Motor de saga y compensación** | **Axon Framework / Eventuate Tram** (librería sobre Spring Boot) | Temporal.io (workflow engine) | Gestión explícita de estados de saga (`transfer_saga_state`) y compensación automática integrada con Spring Boot y Amazon MSK. El Outbox Pattern garantiza que cada mutación de estado y su evento Kafka se persistan en la misma transacción ACID. Temporal añade mayor expresividad pero requiere operar su propio cluster. | RNF-D4-01 |
+| **Caché de listas antifraude** | **Amazon ElastiCache for Redis** (cluster mode, Multi-AZ, TTL 60 s) | ElastiCache Serverless | Latencia sub-milisegundo para consultar listas blanca/gris/negra, garantizando P99 < 200 ms sin impactar el SLA de 2 s. TTL de 60 s asegura propagación rápida de actualizaciones desde D8. ElastiCache Serverless introduce latencia de cold-start incompatible con ese P99. | RNF-D4-05 |
+| **Caché del registro de bancos filiales** | **Amazon ElastiCache for Redis** (TTL 5 min — registro de bancos filiales para LiquidationRouter) | Consulta síncrona a D2 por cada transferencia | El LiquidationRouter necesita determinar en < 50 ms si el banco destino es filial o no. Cachear este registro con TTL de 5 min elimina una llamada síncrona a D2 del camino crítico sin riesgo de inconsistencia, dado que el conjunto de bancos filiales cambia con muy poca frecuencia. | RNF-D4-02 |
+| **Escalado horizontal en picos de nómina** | **Amazon EKS + HPA** con métricas personalizadas vía **CloudWatch Adapter** | KEDA (Kubernetes Event-Driven Autoscaling) | HPA escala los pods de D4 al detectar latencia de cola > 1.5 s o CPU > 70%; EC2 node groups permiten elegir instancias de mayor capacidad en los días de pago masivo (14–16 y 29–31). KEDA añade mayor granularidad por tamaño de cola Kafka pero con mayor complejidad operacional. | RNF-D4-01, RNF-D4-02 |
+
+---
+
+### 4.11 Detalle de stack — D5: Billetera Digital
 
 | Componente | Tecnología | Alternativa | Por qué se eligió | RNF vinculado |
 |---|---|---|---|---|
@@ -106,7 +127,7 @@ La siguiente tabla mapea cada capa del sistema a su tecnología recomendada. **P
 
 ---
 
-### 4.10 Detalle de stack — D6: Integraciones y Pasarelas de Pago
+### 4.12 Detalle de stack — D6: Integraciones y Pasarelas de Pago
 
 | Componente | Tecnología | Alternativa | Por qué se eligió | RNF vinculado |
 |---|---|---|---|---|
