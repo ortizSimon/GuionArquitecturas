@@ -6,91 +6,9 @@
 
 ---
 
-## Figura 1 — Diagrama de contenedores (C4 Level 2)
+## Figura 1 — Diagrama de contexto (C4 Level 2)
 
-> Generado con Mermaid. Para exportar a imagen: usar <https://mermaid.live>
-
-```mermaid
-C4Container
-    title Figura 1 — Arquitectura del sistema Empresa X (C4 Level 2)
-
-    Person(user_natural, "Persona Natural", "Usuario con cuenta bancaria y/o billetera")
-    Person(user_empresa, "Empresa Aliada", "Gestiona nómina y pagos a empleados")
-
-    System_Boundary(empresaX, "Sistema Empresa X") {
-
-        Container(api_gateway, "API Gateway", "Kong / AWS API GW", "Enrutamiento, autenticación, TLS, rate-limiting")
-
-        Container(iam, "D1: IAM Service", "Node.js / Keycloak", "Autenticación OAuth2+JWT, MFA, RBAC, políticas OWASP")
-
-        Container(usuarios, "D2: Usuarios y Cuentas", "Java / Spring Boot", "Carga masiva de bancos, sincronización diaria, consulta de cuentas")
-
-        Container(empresas, "D3: Empresas y Empleados", "Java / Spring Boot", "Registro de empresas aliadas, referencia mínima de empleados")
-
-        Container(transferencias, "D4: Transferencias y Tx", "Java / Spring Boot", "Transferencias inmediatas (filiales) y vía ACH, patrón Saga")
-
-        Container(billetera, "D5: Billetera Digital", "Java / Spring Boot", "Cuenta emitida por Empresa X, movimientos, pagos a terceros")
-
-        Container(integraciones, "D6: Integraciones y Pasarelas", "Node.js", "Adapters para PSE, DRUO, Apple Pay, ACH y terceros a demanda")
-
-        Container(nomina, "D7: Pagos Masivos", "Java / Spring Boot", "Nómina empresarial, lotes 20K–30K tx, trazabilidad por empleado")
-
-        Container(auditoria, "D8: Reportes y Auditoría", "Python / Flink", "Histórico inmutable, reportes regulatorios, monitoreo fraude")
-
-        Container(broker, "Message Broker", "Apache Kafka", "Event streaming — desacopla todos los dominios")
-
-        ContainerDb(db_usuarios, "DB Usuarios", "PostgreSQL", "Datos de usuarios y cuentas")
-        ContainerDb(db_empresas, "DB Empresas", "PostgreSQL", "Referencia empresas y empleados")
-        ContainerDb(db_tx, "DB Transacciones", "PostgreSQL + EventStore", "Registro ACID de transferencias")
-        ContainerDb(db_billetera, "DB Billetera", "PostgreSQL", "Saldo y movimientos de billetera")
-        ContainerDb(db_auditoria, "DB Auditoría", "Cassandra / S3", "Histórico append-only, Event Sourcing")
-        ContainerDb(cache, "Caché", "Redis", "Sesiones, saldos frecuentes, rate-limiting")
-    }
-
-    System_Ext(bancos, "Bancos Filiales", "Proveen datos de usuarios vía carga masiva e integración")
-    System_Ext(ach, "Sistema ACH", "Autoriza transferencias a bancos no filiales e internacionales")
-    System_Ext(pasarelas, "Pasarelas de Pago", "PSE, DRUO, Apple Pay")
-    System_Ext(terceros, "Terceros (Servicios)", "Servicios públicos, impuestos, transporte, etc.")
-    System_Ext(superfinanciera, "Superfinanciera", "Recibe reportes semestrales regulatorios")
-    System_Ext(empresa_api, "API Empresa Aliada", "Provee datos de empleados en tiempo de pago")
-
-    Rel(user_natural, api_gateway, "HTTPS — web, móvil, tablet")
-    Rel(user_empresa, api_gateway, "HTTPS — portal empresarial")
-
-    Rel(api_gateway, iam, "Valida token")
-    Rel(api_gateway, usuarios, "GET /accounts, saldos")
-    Rel(api_gateway, transferencias, "POST /transfers")
-    Rel(api_gateway, billetera, "POST /wallet")
-    Rel(api_gateway, nomina, "POST /payroll")
-
-    Rel(iam, cache, "Sesiones y tokens")
-    Rel(usuarios, db_usuarios, "Lee/escribe")
-    Rel(empresas, db_empresas, "Lee/escribe")
-    Rel(transferencias, db_tx, "Lee/escribe (ACID)")
-    Rel(billetera, db_billetera, "Lee/escribe")
-    Rel(auditoria, db_auditoria, "Append-only write")
-
-    Rel(transferencias, broker, "Publica TransferInitiated, TransferCompleted…")
-    Rel(billetera, broker, "Publica WalletCredited, ThirdPartyPaymentInitiated…")
-    Rel(nomina, broker, "Publica PayrollJobScheduled, MassivePaymentDispatched…")
-    Rel(usuarios, broker, "Publica UserRegistered, AccountSyncCompleted…")
-    Rel(iam, broker, "Publica UnauthorizedAccessAttempt…")
-
-    Rel(auditoria, broker, "Consume todos los eventos de transacción")
-    Rel(integraciones, broker, "Consume + Publica PaymentGatewayResult, ACHResponseReceived…")
-    Rel(transferencias, broker, "Consume ACHResponseReceived")
-    Rel(billetera, broker, "Consume PaymentGatewayResult")
-    Rel(nomina, broker, "Consume PaymentGatewayResult")
-    Rel(iam, broker, "Consume SuspiciousTransactionDetected")
-
-    Rel(usuarios, bancos, "ETL carga masiva / sincronización diaria")
-    Rel(integraciones, ach, "HTTPS — envío y recepción de respuesta ACH")
-    Rel(integraciones, pasarelas, "HTTPS — PSE, DRUO, Apple Pay")
-    Rel(integraciones, terceros, "HTTPS — Adapter por tercero")
-    Rel(nomina, empresa_api, "HTTPS — consulta datos empleado en tiempo real")
-    Rel(auditoria, superfinanciera, "HTTPS / SFTP — reporte semestral")
-    Rel(auditoria, bancos, "HTTPS / SFTP — extracto trimestral")
-```
+<img width="2960" height="1764" alt="ContextDiagram" src="https://github.com/user-attachments/assets/57cef95f-85b0-4992-ba74-e8c3d8b10b8f" />
 
 ---
 
@@ -412,7 +330,104 @@ graph LR
 
 
 ---
+## Figura  — Detalle interno de D8 ( Reportes, Auditoría y Cumplimiento )
 
+Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D8 y sus canales de comunicación con el resto del sistema.
+
+```mermaid
+
+graph LR
+  %% ── Entradas (izquierda) ──────────────────────────────────────
+  KAFKA_IN["Kafka\n(eventos de D1–D7)"]
+
+  %% ── D8 (centro) ───────────────────────────────────────────────
+  subgraph D8["D8 — Reportes, Auditoría y Cumplimiento Regulatorio"]
+    direction TB
+
+    EventIngester["Event Ingester\n(Kafka Consumer Group\nsuscrito a todos los tópicos)"]
+
+    FraudStreamProcessor["Fraud Stream Processor\n(Amazon Managed Flink\nCEP + ventanas de tiempo)"]
+
+    FraudListManager["Fraud List Manager\n(listas blanca/gris/negra\npropaga actualizaciones)"]
+
+    AuditStoreWriter["Audit Store Writer\n(append-only, event sourcing\nhash-chain de integridad)"]
+
+    ReportScheduler["Report Scheduler\n(cron + ejecución ad-hoc)\nTrimestral: extracto a bancos\nSemestral: reporte Superfinanciera"]
+
+    ReportGenerator["Report Generator\n(Python)\nPDF/CSV/XML\nconsulta OpenSearch"]
+
+    DashboardAPI["Dashboard API\n(REST)\nbúsqueda por correlation_id\nalertas + métricas"]
+
+    %% Flujo interno
+    EventIngester --> FraudStreamProcessor
+    FraudStreamProcessor --> FraudListManager
+    EventIngester --> AuditStoreWriter
+    ReportScheduler --> ReportGenerator
+  end
+
+  %% ── Almacenamiento (abajo / derecha-inferior) ──────────────────
+  KEYSPACES[("Amazon Keyspaces\n(Cassandra serverless)\nhistórico inmutable\nEvent Sourcing + hash_chain")]
+
+  FIREHOSE["Kinesis Data Firehose\n(streaming desde D8)"]
+
+  OPENSEARCH[("Amazon OpenSearch\n(Multi-AZ)\nfull-text + agregaciones\naudit log + reportes")]
+
+  REDIS[("ElastiCache Redis\n(Multi-AZ)\nlistas blanca/gris/negra\nTTL 60s")]
+
+  %% ── Salidas (derecha) ─────────────────────────────────────────
+  KAFKA_OUT["Kafka\n(eventos salientes)"]
+  D1["D1: IAM\n(bloqueo preventivo)"]
+  D4["D4: Transferencias\n(invalida caché antifraude)"]
+  D6["D6: Integraciones\n(envío reportes)"]
+  BANCOS["Bancos Filiales\n(HTTPS / SFTP)\nExtracto trimestral"]
+  SUPERF["Superintendencia Financiera\n(HTTPS / SFTP)\nReporte semestral"]
+  APIGW["API Gateway"]
+
+  %% ── Ingesta desde dominios ────────────────────────────────────
+  KAFKA_IN -->|"Eventos de D1–D7\n(UserAuthenticated, TransferInitiated,\nWalletDebited, PayrollBatchCompleted, etc.)"| EventIngester
+
+  %% ── Persistencia + indexación ──────────────────────────────────
+  AuditStoreWriter -->|"append-only\n(event_id, correlation_id,\ndomain, event_type,\npayload firmado, ts,\nhash_chain)"| KEYSPACES
+
+  AuditStoreWriter -->|"stream"| FIREHOSE -->|"index"| OPENSEARCH
+
+  %% ── Fraude (listas + eventos) ──────────────────────────────────
+  FraudListManager -->|"SET listas + TTL"| REDIS
+  FraudListManager -->|"SuspiciousTransactionDetected\nFraudListUpdated"| KAFKA_OUT
+  KAFKA_OUT -->|"bloqueo preventivo\n(RBAC + sesiones)"| D1
+  KAFKA_OUT -->|"invalidación caché\nlistas antifraude"| D4
+
+  %% ── Reportes regulatorios (vía D6) ─────────────────────────────
+  ReportGenerator -->|"extracto trimestral\n(PDF/CSV por usuario/banco)\nreporte semestral\n(XML movimientos)"| D6
+  D6 -->|"HTTPS / SFTP"| BANCOS
+  D6 -->|"HTTPS / SFTP"| SUPERF
+
+  %% ── Consultas / Dashboard ──────────────────────────────────────
+  APIGW -->|"GET /audit/dashboard\nGET /audit/search\nGET /audit/alerts"| DashboardAPI
+  DashboardAPI -->|"query + agregaciones"| OPENSEARCH
+  ReportGenerator -->|"query agregados\npor usuario/banco/período"| OPENSEARCH
+
+```
+
+Descripcion de componentes - D8
+
+| Componente	| Responsabilidad |
+|---|---|
+|Event Ingester |	Consumer group de Kafka suscrito a todos los tópicos de eventos de D1-D7. Normaliza cada evento con correlation_id, timestamp y source_domain. Garantiza at-least-once con idempotencia en escritura (deduplicación por event_id). Distribuye cada evento en paralelo al Fraud Stream Processor y al Audit Store Writer. |
+|Fraud Stream Processor (Flink) |	Procesador stateful desplegado en Amazon Managed Flink. Aplica reglas CEP (Complex Event Processing) sobre ventanas de tiempo deslizantes: detecta patrones como >5 transferencias al mismo destino en 10 min, montos atípicos respecto al historial del usuario, o actividad desde cuentas en lista gris. Emite SuspiciousTransactionDetected en tiempo real hacia Kafka. |
+|Audit Store Writer |	Escribe cada evento recibido en Amazon Keyspaces de forma append-only (nunca se modifica ni elimina un registro). Cada registro incluye: event_id, correlation_id, domain, event_type, payload (firmado digitalmente), timestamp y hash_chain (hash del registro anterior para garantizar integridad). En paralelo, envía el evento a OpenSearch vía Kinesis Data Firehose para indexación full-text. |
+|Fraud List Manager |	Mantiene y actualiza las listas blanca/gris/negra en ElastiCache Redis con TTL de 60 s. Se alimenta de las detecciones de Flink y de fuentes regulatorias externas. Publica FraudListUpdated a Kafka para que D1 (bloqueo preventivo en RBAC) y D4 (evaluación antifraude pre-transferencia) sincronicen su caché local. |
+|Report Scheduler |	Cron configurable que dispara la generación de reportes regulatorios: extracto trimestral a bancos (cada 3 meses, por usuario y banco) y reporte semestral a la Superintendencia Financiera (cada 6 meses, detalle de todos los movimientos). Soporta ejecución manual para auditorías ad-hoc.|
+|Report Generator |	Script Python que consulta OpenSearch con queries de agregación por usuario/banco/período. Genera el extracto o reporte en el formato requerido por el destinatario (PDF/CSV para bancos, XML para Superfinanciera). Envía el resultado a D6 (Integraciones) para distribución a bancos vía HTTPS/SFTP o a Superfinanciera vía HTTPS/SFTP.|
+|Dashboard API |	Endpoint REST para consultas operacionales internas expuesto vía API Gateway. Permite buscar transacciones por correlation_id, consultar alertas de fraude activas, ver estado de lotes de nómina y métricas de cumplimiento. Consume OpenSearch como backend de búsqueda y agregación.|
+
+**Comunicacion clave:**
+
+- **Entrante asincrono (Kafka):** Todos los eventos de D1, D2, D3, D4, D5, D6, D7 (es el observador pasivo universal del sistema)
+- **Saliente asincrono (Kafka):** SuspiciousTransactionDetected, FraudListUpdated -> consumidos por D1 (bloqueo preventivo) y D4 (invalidacion de cache antifraude)
+- **Saliente batch (via D6):** Extracto trimestral -> bancos filiales (HTTPS/SFTP); Reporte semestral -> Superintendencia Financiera (HTTPS/SFTP)
+- **Saliente sincrono:** Dashboard API para consultas operacionales internas via API Gateway
+- 
 ## Pendientes
 
 - [ ] Renderizar el diagrama Mermaid y adjuntar imagen en el reporte final (usar mermaid.live o plugin VS Code)
