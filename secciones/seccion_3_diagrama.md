@@ -66,10 +66,135 @@
 
 ---
 
+## Figura 2 — Detalle interno de D1 (IAM Service)
+
+Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D1 y sus canales de comunicación con el resto del sistema.
+
+```mermaid
+graph TB
+
+    Cliente["Cliente (Web / Móvil / Portal Empresarial)"]
+    APIGW["API Gateway\n(JWT Authorizer + WAF + Rate Limit)"]
+
+    subgraph D1["D1 — IAM Service"]
+        direction TB
+
+        AuthAPI["Auth API\n(OAuth2 / OIDC)"]
+        RBAC["RBAC + Scopes"]
+        MFA["MFA Service"]
+        DB[("Aurora PostgreSQL\nUsers / Roles")]
+        Redis[("Redis\nSessions + Lockouts")]
+        Outbox["Outbox Publisher\n(Eventos a Kafka)"]
+
+        AuthAPI --> RBAC
+        RBAC --> MFA
+        RBAC --> DB
+        MFA --> DB
+        AuthAPI --> Redis
+        AuthAPI --> Outbox
+    end
+
+    Kafka["Amazon MSK (Kafka)"]
+    D8["D8 — Auditoría"]
+
+    Cliente -->|HTTPS| APIGW
+    APIGW -->|Login / Refresh| AuthAPI
+    APIGW -->|Validación JWT| RBAC
+
+    Outbox -->|UserAuthenticated\nUserLocked\nUnauthorizedAccessAttempt| Kafka
+    Kafka --> D8
+
+    D8 -->|SuspiciousTransactionDetected| AuthAPI
+```
+
+### Descripción de componentes — D1
+
+| Componente | Responsabilidad |
+|---|---|
+| **Auth API (OAuth2/OIDC)** | Punto de entrada para login, refresh token y logout. Implementa flujo Authorization Code para web/móvil y credenciales seguras. Emite JWT firmados con claims: `sub`, `roles`, `scope`, `exp`, `iat`, `jti`. |
+| **RBAC + Scopes** | Control de acceso granular por rol y operación. Valida que el token incluya los roles y scopes requeridos para cada endpoint protegido. Los roles se persisten en Aurora PostgreSQL. |
+| **MFA Service** | Autenticación multifactor requerida para roles críticos (`ROLE_SECURITY_ADMIN`, `ROLE_PAYROLL_MANAGER`) y accesos de alto riesgo. |
+| **Aurora PostgreSQL (Users/Roles)** | Almacena usuarios, roles, asignaciones usuario-rol, intentos de login y revocaciones de token. Cifrado en reposo con AWS KMS. |
+| **Redis (Sessions + Lockouts)** | Gestiona sesiones activas, contadores de intentos fallidos (ventana temporal), revocación de tokens (`jti` → blacklist) y bloqueo por IP sospechosa. |
+| **Outbox Publisher** | Publica eventos de autenticación a Kafka con Outbox Pattern (entrega garantizada). Eventos: `UserAuthenticated`, `UserLocked`, `UnauthorizedAccessAttempt`. |
+
+**Comunicación clave:**
+- **Entrante síncrono:** Cliente (login/refresh vía API Gateway), API Gateway (validación JWT para enrutar a D2–D8)
+- **Saliente asíncrono (Kafka):** `UserAuthenticated`, `UserLocked`, `UnauthorizedAccessAttempt` → consumidos por D8 (auditoría)
+- **Entrante asíncrono (Kafka):** `SuspiciousTransactionDetected` desde D8 → suspensión o MFA reforzado
 
 ---
 
-## Figura 2 — Detalle interno de D3 (Empresas y Empleados)
+## Figura 3 — Detalle interno de D2 (Usuarios y Cuentas)
+
+Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D2 y sus canales de comunicación con el resto del sistema.
+
+```mermaid
+graph TB
+
+    Cliente["Cliente Web / Móvil"]
+    D1["D1 — IAM"]
+    D4["D4 — Transferencias"]
+    D5["D5 — Billetera"]
+    Bancos["Bancos Filiales / No Filiales"]
+
+    subgraph D2["D2 — Usuarios y Cuentas"]
+        direction TB
+
+        UsersAPI["Users API"]
+        AccountsAPI["Accounts API"]
+        SyncJobs["Sync Jobs ETL"]
+        DB[("Aurora PostgreSQL\nUsers / BankAccount / Limits")]
+        Redis[("Redis Cache\nCatálogo afiliados / TTL")]
+        Outbox["Outbox Publisher\nEventos a Kafka"]
+
+        UsersAPI --> DB
+        AccountsAPI --> DB
+        AccountsAPI --> Redis
+        SyncJobs --> DB
+        SyncJobs --> Outbox
+        UsersAPI --> Outbox
+        AccountsAPI --> Outbox
+    end
+
+    Kafka["Amazon MSK (Kafka)"]
+    D8["D8 — Auditoría"]
+
+    Cliente -->|HTTP| UsersAPI
+    Cliente -->|HTTP| AccountsAPI
+    D1 -->|JWT validado| UsersAPI
+    D1 -->|JWT validado| AccountsAPI
+
+    D4 -->|Consulta cuentas y límites| AccountsAPI
+    D5 -->|Consulta cuentas asociadas| AccountsAPI
+
+    Bancos -->|Archivos API SFTP| SyncJobs
+
+    Outbox -->|UserRegistered\nAccountStatusChanged\nAccountSyncCompleted| Kafka
+    Kafka --> D8
+    Kafka --> D4
+    Kafka --> D5
+```
+
+### Descripción de componentes — D2
+
+| Componente | Responsabilidad |
+|---|---|
+| **Users API** | Punto de entrada REST para alta y gestión de perfil de usuario (persona natural). Protegido por JWT de D1. Publica `UserRegistered` vía Outbox. |
+| **Accounts API** | Gestiona la vinculación y consulta de cuentas bancarias por usuario. Provee endpoints de lectura con caché Redis para responder en < 2 s. Consumido por D4 (saldo/límites) y D5 (cuentas asociadas). |
+| **Sync Jobs ETL** | Procesos batch containerizados que ejecutan la sincronización diaria idempotente con bancos (vía archivos/API/SFTP). Upsert por clave natural; genera `AccountSyncCompleted` al finalizar. |
+| **Aurora PostgreSQL (D2)** | Almacena `User`, `Bank`, `BankAccount`, `AccountLimit` y `SyncJob`. Campos sensibles (`account_number`) cifrados en reposo con AWS KMS. |
+| **Redis Cache** | Caché de catálogo de bancos afiliados y lecturas frecuentes de cuentas (TTL configurable). Objetivo: cache hit rate ≥ 80% para mantener P95 < 2 s. |
+| **Outbox Publisher** | Publica eventos (`UserRegistered`, `AccountStatusChanged`, `AccountSyncCompleted`, `AffiliateBankRegistryUpdated`) con entrega garantizada at-least-once dentro de la misma transacción ACID. |
+
+**Comunicación clave:**
+- **Entrante síncrono:** Cliente (gestión de perfil/cuentas), D1 (autorización JWT), D4 (consulta saldo/límites), D5 (consulta cuentas asociadas)
+- **Entrante batch:** Bancos filiales/no filiales (sincronización diaria vía archivos/API/SFTP)
+- **Saliente asíncrono (Kafka):** `UserRegistered`, `AccountStatusChanged`, `AccountSyncCompleted` → consumidos por D8, D4, D5
+
+---
+
+## Figura 4 — Detalle interno de D3 (Empresas y Empleados)
 
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D3 y sus canales de comunicación con el resto del sistema.
 
@@ -131,7 +256,7 @@ graph LR
 
 ---
 
-## Figura 3 — Detalle interno de D4 (Transferencias y Transacciones)
+## Figura 5 — Detalle interno de D4 (Transferencias y Transacciones)
 
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D4 y sus canales de comunicación con el resto del sistema.
 
@@ -199,7 +324,7 @@ graph LR
 
 
 
-## Figura 4 — Detalle interno de D5 (Billetera Digital)
+## Figura 6 — Detalle interno de D5 (Billetera Digital)
 
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D5 y sus canales de comunicación con el resto del sistema.
 
@@ -261,7 +386,7 @@ graph LR
 
 ---
 
-## Figura 5 — Detalle interno de D6 (Integraciones y Pasarelas de Pago)
+## Figura 7 — Detalle interno de D6 (Integraciones y Pasarelas de Pago)
 
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D6 y sus canales de comunicación con el resto del sistema.
 
@@ -330,7 +455,62 @@ graph LR
 
 
 ---
-## Figura  — Detalle interno de D8 ( Reportes, Auditoría y Cumplimiento )
+
+## Figura 8 — Detalle interno de D7 (Pagos Masivos a Empleados)
+
+Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D7 y sus canales de comunicación con el resto del sistema.
+
+```mermaid
+graph TB
+
+    Empresa["Empresa (Portal Empresarial)"]
+
+    subgraph D7["D7 — Pagos Masivos"]
+        direction TB
+
+        PayrollAPI["Payroll API\n(REST)"]
+        Scheduler["Payroll Scheduler\n(pagos automáticos)"]
+        BatchManager["Batch Manager\n- crea lote\n- divide en pagos"]
+        WorkerPool["Worker Pool\n(procesamiento paralelo)"]
+        SagaHandler["Saga Handler\n- inicia pago en D4\n- espera resultado"]
+        PayrollDB[("Payroll DB\n(estado lote y pagos)")]
+
+        PayrollAPI --> BatchManager
+        Scheduler --> BatchManager
+        BatchManager --> WorkerPool
+        WorkerPool --> SagaHandler
+        SagaHandler --> PayrollDB
+    end
+
+    D4["D4 — Transferencias"]
+    D8["D8 — Auditoría"]
+
+    Empresa --> PayrollAPI
+    SagaHandler -->|Evento: PayrollPaymentInitiated| D4
+    D4 -->|TransferSettled / TransferFailed| SagaHandler
+    SagaHandler -->|Eventos de trazabilidad| D8
+```
+
+### Descripción de componentes — D7
+
+| Componente | Responsabilidad |
+|---|---|
+| **Payroll API** | Punto de entrada REST para que la empresa aliada inicie pagos manuales o consulte estado de lotes. Protegido por JWT de D1 con rol `payroll_manager` o `company_admin`. |
+| **Payroll Scheduler** | Dispara automáticamente la ejecución de nómina según el calendario configurado por empresa (días 14–16 y 29–31, o cualquier día del mes). Usa lock distribuido para garantizar ejecución única por fecha. |
+| **Batch Manager** | Crea el lote (`PayrollBatch`) y lo divide en pagos individuales independientes (`PayrollPayment`). Cada pago es una unidad atómica con su propia saga. |
+| **Worker Pool** | Procesa los pagos individuales en paralelo. Escala horizontalmente vía HPA para soportar picos de 20K–30K pagos. Particionamiento por empresa para aislamiento de fallos. |
+| **Saga Handler** | Inicia cada pago como transferencia individual en D4 (`PayrollPaymentInitiated`) y espera el resultado (`TransferSettled` / `TransferFailed`). Publica eventos de trazabilidad a D8 por cada pago y al completar el lote. |
+| **Payroll DB (Aurora)** | Almacena estado de lotes (`PayrollBatch`) y pagos individuales (`PayrollPayment`). No almacena datos bancarios del empleado; la referencia financiera final se obtiene en D4. |
+
+**Comunicación clave:**
+- **Entrante síncrono:** Empresa (portal empresarial → Payroll API), D1 (autorización), D3 (consulta empleados activos)
+- **Saliente asíncrono (Kafka):** `PayrollPaymentInitiated` → D4 (ejecuta transferencia individual)
+- **Entrante asíncrono (Kafka):** `TransferSettled` / `TransferFailed` desde D4 → Saga Handler actualiza estado del pago
+- **Saliente asíncrono (Kafka):** `PayrollBatchCreated`, `PayrollPaymentSucceeded/Failed`, `PayrollBatchCompleted` → D8 (trazabilidad)
+
+---
+
+## Figura 9 — Detalle interno de D8 (Reportes, Auditoría y Cumplimiento)
 
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D8 y sus canales de comunicación con el resto del sistema.
 
@@ -409,7 +589,7 @@ graph LR
 
 ```
 
-Descripcion de componentes - D8
+### Descripción de componentes — D8
 
 | Componente	| Responsabilidad |
 |---|---|
@@ -421,16 +601,17 @@ Descripcion de componentes - D8
 |Report Generator |	Script Python que consulta OpenSearch con queries de agregación por usuario/banco/período. Genera el extracto o reporte en el formato requerido por el destinatario (PDF/CSV para bancos, XML para Superfinanciera). Envía el resultado a D6 (Integraciones) para distribución a bancos vía HTTPS/SFTP o a Superfinanciera vía HTTPS/SFTP.|
 |Dashboard API |	Endpoint REST para consultas operacionales internas expuesto vía API Gateway. Permite buscar transacciones por correlation_id, consultar alertas de fraude activas, ver estado de lotes de nómina y métricas de cumplimiento. Consume OpenSearch como backend de búsqueda y agregación.|
 
-**Comunicacion clave:**
+**Comunicación clave:**
 
-- **Entrante asincrono (Kafka):** Todos los eventos de D1, D2, D3, D4, D5, D6, D7 (es el observador pasivo universal del sistema)
-- **Saliente asincrono (Kafka):** SuspiciousTransactionDetected, FraudListUpdated -> consumidos por D1 (bloqueo preventivo) y D4 (invalidacion de cache antifraude)
-- **Saliente batch (via D6):** Extracto trimestral -> bancos filiales (HTTPS/SFTP); Reporte semestral -> Superintendencia Financiera (HTTPS/SFTP)
-- **Saliente sincrono:** Dashboard API para consultas operacionales internas via API Gateway
-- 
+- **Entrante asíncrono (Kafka):** Todos los eventos de D1, D2, D3, D4, D5, D6, D7 (es el observador pasivo universal del sistema)
+- **Saliente asíncrono (Kafka):** `SuspiciousTransactionDetected`, `FraudListUpdated` → consumidos por D1 (bloqueo preventivo) y D4 (invalidación de caché antifraude)
+- **Saliente batch (vía D6):** Extracto trimestral → bancos filiales (HTTPS/SFTP); Reporte semestral → Superintendencia Financiera (HTTPS/SFTP)
+- **Saliente síncrono:** Dashboard API para consultas operacionales internas vía API Gateway
+
+
 ## Pendientes
 
 - [ ] Renderizar el diagrama Mermaid y adjuntar imagen en el reporte final (usar mermaid.live o plugin VS Code)
 - [ ] Confirmar tecnologías definitivas por componente (alineado con Sección 4)
 - [ ] Agregar diagrama C4 Level 1 (System Context) si lo requiere el profesor
-- [ ] Validar que todos los dominios de Sección 1 aparecen en el diagrama
+- [x] Validar que todos los dominios de Sección 1 aparecen en el diagrama (D1–D8 completos)
