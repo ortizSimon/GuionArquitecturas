@@ -16,12 +16,12 @@ Los RNF se extraen **exclusivamente** del enunciado (`descripcion_del_proyecto.m
 | # | Requisito no funcional | Descripción del RNF | Funciones de ajuste |
 |---|------------------------|---------------------|---------------------|
 | RNF-01 | **Disponibilidad** | El sistema debe operar 24/7 sin interrupciones planificadas. | • Replicación activa-activa de servicios críticos (D4, D5, D1) <br>• Health checks y circuit breakers (Resilience4j / Istio) <br>• Failover automático en infraestructura (K8s self-healing) <br>• SLA objetivo: 99.9% uptime |
-| RNF-02 | **Rendimiento / Tiempo de respuesta** | El tiempo de respuesta del sistema debe ser menor a 2 segundos para operaciones de usuario. | • Caché distribuida para consultas de saldo (Redis) <br>• Procesamiento asíncrono de operaciones no críticas (Kafka) <br>• CDN para activos estáticos del frontend <br>• Métrica: P95 < 2 s en producción |
+| RNF-02 | **Rendimiento / Tiempo de respuesta** | El tiempo de respuesta del sistema debe ser menor a 2 segundos para operaciones de usuario. | • Caché de corta duración (TTL) para respuestas del proxy de saldo en tiempo real (Redis); D2 no almacena saldos permanentemente, solo cachea las respuestas de los bancos filiales vía D6 <br>• Procesamiento asíncrono de operaciones no críticas (Kafka) <br>• CDN para activos estáticos del frontend <br>• Métrica: P95 < 2 s en producción |
 | RNF-03 | **Escalabilidad** | El sistema debe soportar ~25 millones de usuarios activos y picos de 20K–30K transacciones en ventanas específicas (días 14–16 y 29–31 de cada mes). | • Escalado horizontal automático (HPA en Kubernetes) <br>• Queue-based load leveling para pagos masivos (D7) <br>• Particionamiento de tópicos Kafka por volumen esperado <br>• Pruebas de carga previas a ventanas de pago |
-| RNF-04 | **Seguridad** | El sistema debe cumplir restricciones estatales: autenticación/autorización, cifrado en todo el ciclo de vida, canales seguros, monitoreo de actividad y conformidad OWASP. | • OAuth2 + JWT con MFA (D1-IAM) <br>• TLS 1.3 en todos los canales (internos y externos) <br>• Cifrado en reposo (AES-256) para datos sensibles <br>• WAF + detección de intrusiones (IDS) <br>• Listas blancas/grises/negras en monitoreo de transacciones (D8) <br>• Auditoría de accesos y operaciones (append-only log) <br>• Conformidad OWASP Top 10 |
+| RNF-04 | **Seguridad** | El sistema debe cumplir restricciones estatales: autenticación/autorización, cifrado en todo el ciclo de vida, canales seguros, monitoreo de actividad y conformidad OWASP. | • OAuth2 + JWT con MFA (D1-IAM) <br>• TLS 1.3 en todos los canales (internos y externos) <br>• Cifrado en reposo (AES-256) para datos sensibles <br>• WAF + detección de intrusiones (IDS) <br>• Validación en línea contra listas blancas/grises/negras antes de ejecutar transferencias (D4 — Primario); D8 retroalimenta las listas mediante análisis post-hoc <br>• Auditoría de accesos y operaciones (append-only log) <br>• Conformidad OWASP Top 10 |
 | RNF-05 | **Extensibilidad** | El sistema debe permitir integrar terceros (pasarelas, servicios de pago) a demanda sin afectar el estado del sistema en producción. | • Patrón Plugin/Adapter por canal externo (D6) <br>• Registro dinámico de adaptadores (sin redespliegue del núcleo) <br>• Contratos de API versionados (OpenAPI 3.x) <br>• Feature flags para activar/desactivar integraciones en caliente |
 | RNF-06 | **Trazabilidad y cumplimiento regulatorio** | El sistema debe mantener histórico completo de transacciones, generar extractos trimestrales a bancos y reportes semestrales a la Superintendencia Financiera. | • Event Sourcing / append-only store (D8) <br>• Correlación de eventos con IDs únicos de transacción <br>• Jobs programados para generación y envío de reportes (scheduler) <br>• Retención configurable de datos por normativa |
-| RNF-07 | **Fiabilidad / Consistencia transaccional** | Las transferencias entre bancos filiales deben reflejarse de forma inmediata; las operaciones distribuidas deben completarse o compensarse ante fallos. | • Patrón Saga con compensación (D4, D5) <br>• Idempotencia en todos los endpoints de transacción <br>• Exactly-once delivery en Kafka (transacciones Kafka) <br>• Dead letter queues para eventos fallidos |
+| RNF-07 | **Fiabilidad / Consistencia transaccional** | Las transferencias entre bancos filiales deben reflejarse de forma inmediata; las operaciones distribuidas deben completarse o compensarse ante fallos. | • Patrón Saga coreografiada con compensación (D4, D5) <br>• Idempotencia en todos los endpoints de transacción <br>• Exactly-once delivery en Kafka (transacciones Kafka) <br>• Dead letter queues para eventos fallidos |
 | RNF-08 | **Multiplataforma / Usabilidad** | La interfaz debe funcionar en web, smartphones y tablets de gama media/alta (mínimo 6 pulgadas) con experiencia de usuario consistente. | • Diseño responsive (CSS Grid / Flexbox) <br>• Progressive Web App (PWA) para móvil híbrido (H) <br>• Pruebas de compatibilidad en dispositivos objetivo <br>• Guía de estilo/design system unificado (H) |
 | RNF-09 | **(H) Observabilidad** | El sistema debe permitir monitorear el estado de los servicios, detectar anomalías y depurar incidentes en producción. | • Trazabilidad distribuida (OpenTelemetry / Jaeger) <br>• Métricas por servicio (Prometheus + Grafana) <br>• Logs centralizados (ELK Stack) <br>• Alertas automáticas ante umbrales críticos |
 | RNF-10 | **(H) Mantenibilidad / Evolvabilidad** | La arquitectura debe permitir modificar, versionar o reemplazar dominios individuales sin afectar al resto del sistema. | • Bounded contexts con base de datos por servicio (Database per Service) <br>• Contratos de API semánticos + consumer-driven contract testing (Pact) <br>• ADR (Architecture Decision Records) por cada cambio estructural <br>• CI/CD con pipelines por microservicio |
@@ -31,7 +31,7 @@ Los RNF se extraen **exclusivamente** del enunciado (`descripcion_del_proyecto.m
 | RNF-D1-04 | **Autorización granular — RBAC + scopes (D1)** | El acceso a operaciones críticas debe controlarse por rol y alcance (scope). | • 100% endpoints sensibles protegidos (pruebas automatizadas) <br>• 0 rutas expuestas sin rol (pruebas RBAC por rol en CI/CD) |
 | RNF-D1-05 | **Trazabilidad y cumplimiento de accesos (D1)** | Todo acceso (éxito/fallo) debe quedar trazado para auditoría, investigación y cumplimiento. | • 100% eventos de autenticación publicados (D1 → MSK → D8) <br>• P95 latencia hacia auditoría < 500 ms <br>• Retención de logs ≥ 5 años (D8/OpenSearch) |
 | RNF-D2-01 | **Sincronización diaria idempotente con bancos (D2)** | La sincronización de cuentas con bancos debe ejecutarse diariamente de forma idempotente, con trazabilidad y sin duplicar registros. | • 0 duplicados al ejecutar misma carga 2 veces (idempotencia) <br>• ≥ 99% tasa de éxito mensual del sync <br>• P95 latencia de actualización < 10 min |
-| RNF-D2-02 | **Rendimiento de consultas (D2)** | Operaciones de consulta deben responder en menos de 2 segundos. | • P95 tiempo de respuesta < 2 s <br>• Cache hit rate ≥ 80% (Redis) <br>• 5xx < 0.1% en picos |
+| RNF-D2-02 | **Rendimiento de consultas (D2)** | Operaciones de consulta deben responder en menos de 2 segundos. Los saldos se obtienen en tiempo real desde bancos vía D6; se usa un caché de corta duración (TTL) para reducir latencia. | • P95 tiempo de respuesta < 2 s <br>• Cache hit rate ≥ 80% (Redis, TTL corto para respuestas proxy de saldo) <br>• 5xx < 0.1% en picos |
 | RNF-D2-03 | **Escalabilidad — 25M usuarios (D2)** | Debe soportar decenas de millones de usuarios y alto volumen concurrente. | • Mantener P95 < 2 s con escalado horizontal (EKS + HPA) <br>• Sin caída en picos de concurrencia <br>• Sin degradación crítica en crecimiento de BD (Aurora Serverless v2) |
 | RNF-D2-04 | **Seguridad y cumplimiento (D2)** | Protección de datos sensibles y control de acceso estricto. | • 100% tablas cifradas en reposo <br>• 0 endpoints expuestos sin autenticación (JWT + WAF) <br>• 0 vulnerabilidades críticas OWASP |
 | RNF-D2-05 | **Trazabilidad de sincronizaciones (D2)** | Cada cambio de estado y sincronización debe ser trazable. | • 100% cambios publican evento (Outbox Pattern) <br>• P95 latencia auditoría < 500 ms <br>• Inmutabilidad: append-only en D8 |
@@ -59,7 +59,7 @@ Los RNF se extraen **exclusivamente** del enunciado (`descripcion_del_proyecto.m
 | RNF-D7-04 | **Automatización de nómina programada (D7)** | Los pagos programados deben ejecutarse automáticamente y solo una vez por fecha configurada. | • 100% ejecuciones sin duplicados (scheduler transaccional + lock distribuido) <br>• Desviación horaria < 1 min <br>• Tolerancia a reinicio: no duplicar ejecución tras recovery |
 | RNF-D7-05 | **Aislamiento de fallos por empresa (D7)** | El fallo en la nómina de una empresa no debe impactar las demás. | • 0 impacto cruzado entre empresas (colas separadas por empresa) <br>• Detección de API caída < 5 s (circuit breaker por empresa) <br>• Recuperación automática sin intervención manual (bulkhead pattern) |
 | RNF-D8-01 | **Inmutabilidad e integridad del registro de auditoría (D8)** | Todo evento registrado en el audit store debe ser inmutable (append-only). Ningún registro puede ser modificado, eliminado ni reordenado. La integridad se garantiza mediante encadenamiento de hashes y firma digital del payload. | • 0 modificaciones permitidas (test UPDATE/DELETE → rechazado) <br>• 100% integridad hash chain verificada periódicamente <br>• 100% firmas digitales válidas (verificación diaria) <br>• 100% eventos persistidos (cobertura) <br>• 0 duplicados (deduplicación por `event_id`) |
-| RNF-D8-02 | **Detección de fraude en tiempo real (D8)** | El sistema debe detectar patrones sospechosos (transferencias frecuentes al mismo destino, montos atípicos, actividad desde cuentas en lista gris) en tiempo real mediante procesamiento de streams, y emitir alertas antes de que la transacción se complete. | • P95 detección < 5 s (evento → `SuspiciousTransactionDetected`) <br>• 100% reglas CEP activas en Flink <br>• < 5% falsos positivos <br>• Propagación de listas a D4 < 60 s (`FraudListUpdated` → invalidación caché) |
+| RNF-D8-02 | **Detección de patrones sospechosos y retroalimentación de listas (D8)** | D8 analiza streams de eventos para detectar patrones sospechosos (transferencias frecuentes al mismo destino, montos atípicos, actividad desde cuentas en lista gris) mediante procesamiento post-hoc y correlación histórica. Al detectar un patrón, actualiza las listas blancas/grises/negras que D4 consume para validación en línea. La validación en tiempo real antes de ejecutar cada transferencia es responsabilidad de D4 (Primario). | • P95 detección de patrón < 5 s (evento → `SuspiciousPatternDetected`) <br>• 100% reglas CEP activas en Flink <br>• < 5% falsos positivos <br>• Propagación de listas a D4 < 60 s (`FraudListUpdated` → invalidación caché D4) |
 | RNF-D8-03 | **Generación y envío de reportes regulatorios en plazo (D8)** | El sistema debe generar y enviar automáticamente: (a) extracto trimestral de movimientos a cada banco filial, por usuario; (b) reporte semestral a la Superintendencia Financiera con el detalle de todos los movimientos. | • 100% trimestres cubiertos (scheduler cada 3 meses) <br>• 100% semestres cubiertos (scheduler cada 6 meses) <br>• 100% envíos exitosos a bancos y Superfinanciera (confirmación vía D6) <br>• 0 errores de formato (validación de schema) <br>• 0 faltantes (verificación de completitud del período) |
 | RNF-D8-04 | **Observabilidad del sistema completo (D8)** | D8 debe proveer dashboards operacionales que permitan buscar transacciones por correlation_id, consultar alertas de fraude activas, ver estado de lotes de nómina y métricas de cumplimiento en tiempo real. | • P95 búsqueda por correlation_id < 2 s (OpenSearch) <br>• P95 latencia de indexación < 30 s (evento → disponible) <br>• 99.9% uptime del dashboard (health check Dashboard API) <br>• Alertas automáticas ante umbrales críticos < 60 s (Grafana) |
 | RNF-D8-05 | **Retención y cifrado de datos de auditoría (D8)** | Los datos de auditoría deben retenerse según la normativa vigente (mínimo 5 años para transacciones financieras). Todo dato en reposo debe estar cifrado. | • 100% registros retenidos > 5 años consultables <br>• 100% cifrados en reposo (Keyspaces + OpenSearch con KMS) <br>• 100% reportes cifrados en S3 (SSE-KMS) <br>• ILM: hot (0–6 meses) → warm (6 meses–2 años) → cold (2–5+ años); nunca eliminar antes de 5 años |
@@ -218,7 +218,7 @@ A continuación se listan todos los RNF específicos de cada dominio, con sus fu
 
 | Campo | Detalle |
 |-------|---------|
-| **Descripción** | Operaciones de consulta deben responder en menos de 2 segundos. |
+| **Descripción** | Operaciones de consulta deben responder en menos de 2 segundos. Los saldos se obtienen en tiempo real desde bancos filiales vía D6; se usa un caché de corta duración (TTL) para reducir latencia sin almacenar saldos permanentemente. |
 | **Origen** | RNF-02 |
 | **Categoría RNF** | Rendimiento |
 
@@ -227,12 +227,12 @@ A continuación se listan todos los RNF específicos de cada dominio, con sus fu
 | # | Función de ajuste | Métrica objetivo |
 |---|-------------------|-----------------|
 | FF-D2-02-A | Tiempo respuesta | P95 < 2 s |
-| FF-D2-02-B | Cache hit rate | ≥ 80% |
+| FF-D2-02-B | Cache hit rate (TTL corto, proxy de saldo) | ≥ 80% |
 | FF-D2-02-C | Degradación pico | 5xx < 0.1% |
 
 **Tácticas:**
-- Redis para lecturas frecuentes.
-- Índices por user_id y bank_id.
+- Redis con TTL corto para cachear respuestas de saldo desde bancos (proxy cache, no almacenamiento permanente).
+- Índices por user_id y bank_id para metadata de cuentas.
 - Paginación server-side.
 
 ---
@@ -648,11 +648,11 @@ A continuación se listan todos los RNF específicos de cada dominio, con sus fu
 
 ---
 
-#### RNF-D8-02 — Detección de fraude en tiempo real
+#### RNF-D8-02 — Detección de patrones sospechosos y retroalimentación de listas
 
 | Campo | Detalle |
 |-------|---------|
-| **Descripción** | El sistema debe detectar patrones sospechosos (transferencias frecuentes al mismo destino, montos atípicos, actividad desde cuentas en lista gris) en tiempo real mediante procesamiento de streams, y emitir alertas antes de que la transacción se complete. |
+| **Descripción** | D8 analiza streams de eventos para detectar patrones sospechosos (transferencias frecuentes al mismo destino, montos atípicos, actividad desde cuentas en lista gris) mediante procesamiento post-hoc y correlación histórica. Al detectar un patrón, actualiza las listas blancas/grises/negras que D4 consume para validación en línea. La validación en tiempo real antes de ejecutar cada transferencia es responsabilidad de D4 (Primario). |
 | **Origen** | Consideración 30 (Primario) / RNF-04 (Seguridad) |
 | **Categoría RNF** | Seguridad / Detección de fraude |
 
@@ -660,7 +660,7 @@ A continuación se listan todos los RNF específicos de cada dominio, con sus fu
 
 | # | Función de ajuste | Mecanismo | Métrica objetivo |
 |---|-------------------|-----------|-----------------|
-| FF-D8-02-A | Latencia de detección | Evento → `SuspiciousTransactionDetected` | P95 < 5 s |
+| FF-D8-02-A | Latencia de detección de patrón | Evento → `SuspiciousPatternDetected` | P95 < 5 s |
 | FF-D8-02-B | Cobertura de reglas CEP | % de patrones implementados en Flink | 100% reglas activas |
 | FF-D8-02-C | Tasa de falsos positivos | % alertas FALSE_POSITIVE | < 5% |
 | FF-D8-02-D | Propagación de listas a D4 | Actualización → invalidación caché D4 | < 60 s |
@@ -668,7 +668,7 @@ A continuación se listan todos los RNF específicos de cada dominio, con sus fu
 **Tácticas:**
 - Amazon Managed Flink con reglas CEP sobre ventanas deslizantes.
 - Reglas configurables: frecuencia, desviación de montos, actividad geográfica atípica.
-- Alertas en tiempo real a Kafka; D1 bloquea sesión y D4 rechaza transferencias.
+- Al detectar un patrón, D8 publica `SuspiciousPatternDetected` a Kafka y actualiza las listas via `FraudListUpdated`; D4 consume las listas actualizadas para validación en línea y D1 puede bloquear sesiones preventivamente.
 - Fraud List Manager propaga a Redis (TTL 60 s) y publica `FraudListUpdated`.
 
 ---
