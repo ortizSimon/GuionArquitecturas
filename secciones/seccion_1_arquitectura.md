@@ -1,8 +1,5 @@
 # Sección 1 — Descripción de la arquitectura seleccionada
 
-> **Estado:** ✅ Borrador completo — pendiente de citas  
-> **Trazabilidad:** D1–D8 → Sección 2 (RNF) → Sección 3 (Diagrama) → Sección 4 (Stack) → Sección 5 (Evolución)
-
 ---
 
 ## 1.1 Justificación de la arquitectura
@@ -217,45 +214,3 @@ El sistema se divide en **8 dominios** derivados directamente del enunciado. Cad
 
 
 ---
-
-## 1.3 Mapa de dominios (resumen)
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                     API Gateway                         │
-│         (enrutamiento, autenticación, TLS)              │
-└────────────┬────────────────────────┬───────────────────┘
-             │                        │
-    ┌────────▼──────────┐   ┌─────────▼─────────┐
-    │  D1: IAM          │   │  D8: Reportes /   │
-    │ Identidad/Acceso  │◄──│   Auditoría       │
-    └────────┬──────────┘   └─────────┬─────────┘
-             │                        │  (consume eventos)
-     ┌───────▼───────────────────┐    │
-     │       Message Broker      │◄───┘
-     │          (Kafka)          │
-     └───┬───┬───┬───┬───┬───┬──┘
-         │   │   │   │   │   │
-  ┌──────▼─┐ │ ┌─▼───▼┐ │ ┌─▼────────────┐
-  │ D2:    │ │ │ D4:  │ │ │ D6:          │
-  │Usuarios│ │ │Trans.│ │ │Terceros/     │
-  │Cuentas │ │ │y Tx  │ │ │Pasarelas     │
-  └────────┘ │ └──────┘ │ └──────────────┘
-         ┌───▼──┐   ┌───▼──────┐
-         │ D3:  │   │ D5:      │
-         │Empr/ │   │Billetera │
-         │Empl. │   │Digital   │
-         └──────┘   └──────────┘
-                   ┌──────────────┐
-                   │ D7: Pagos    │
-                   │ Masivos      │
-                   └──────────────┘
-```
-
----
-
-## Pendientes
-
-- [ ] [POR DEFINIR] Agregar citas del material del curso (títulos, autores, unidad)
-- [ ] Confirmar nombre real de la empresa o mantener "Empresa X"
-- [ ] Confirmar si se agrega diagrama C4 Level 1 en esta sección o solo en Sección 3
