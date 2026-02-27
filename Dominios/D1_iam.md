@@ -116,16 +116,6 @@ TokenRevocation {
 | --- | --- | --- |
 | SuspiciousTransactionDetected | D8 detecta patrón sospechoso asociado a user_id | Suspensión o requerir MFA reforzado |
 ---
-title: "ChatGPT"
-source: "https://chatgpt.com/g/g-p-699ca56e659c8191b7e45f9bff7566e7-proyecto-de-arquitecturas-evolutivas/c/699ca89a-5c68-8331-a4af-a9ae81de20e1"
-author:
-  - "[[ChatGPT]]"
-published:
-created: 2026-02-26
-description: "ChatGPT es tu chatbot de IA para el uso diario. Chatea con la IA más avanzada para explorar ideas, resolver problemas y aprender más rápido."
-tags:
-  - "clippings"
----
 ## 1.7 Comunicación con otros dominios
 
 Plain text
@@ -325,3 +315,4 @@ Alineado con el stack global del proyecto (Sección 4). Proveedor de nube: AWS (
 - Confirmar política de retención exacta para logs de autenticación (alineado a cumplimiento)
 - Validar si se requiere mTLS inter-servicio obligatorio (Istio) o solo TLS en gateway
 - Verificar requisitos de residencia de datos (sa-east-1) para identidad y autenticación
+
