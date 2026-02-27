@@ -144,12 +144,5 @@ AWS no cuenta con región en Colombia; la región más cercana es `sa-east-1` (S
 
 ---
 
-### Pendientes Sección 4
-
-- [ ] Confirmar con la Superfinanciera si `sa-east-1` (São Paulo) satisface requisitos de residencia de datos o si se requiere on-premise para componentes críticos
-- [ ] Definir política de retención de datos en Keyspaces y OpenSearch (periodicidad de purga vs. exigencia regulatoria)
-- [ ] Decidir si Keycloak self-hosted en EKS es suficiente o si se requiere proveedor IAM certificado por regulador colombiano
-
----
 
 *Próxima sección: **Sección 2 — RNF y Funciones de ajuste (Tabla 1)** · Sección 3 — Diagrama C4 (Figura 1)***
