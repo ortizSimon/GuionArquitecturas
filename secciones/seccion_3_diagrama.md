@@ -2,9 +2,172 @@
 
 ---
 
-## Figura 1 — Diagrama de contexto (C4 Level 2)
+## Figura 1 — Diagrama general de contexto
 
 <img width="2960" height="1764" alt="ContextDiagram" src="https://github.com/user-attachments/assets/57cef95f-85b0-4992-ba74-e8c3d8b10b8f" />
+
+```mermaid
+graph TB
+    %% ═══════════════════════════════════════════════════════════════
+    %% ACTORES
+    %% ═══════════════════════════════════════════════════════════════
+    PN["Persona Natural"]
+    ADM["Administrador"]
+    EA["Empresa Aliada\nGestiona nómina y pagos"]
+    API_EA["API Empresa Aliada\nDatos empleados en tiempo de pago"]
+    BF["Bancos Filiales\nProveen datos vía carga masiva"]
+    SF["Superintendencia Financiera\nRecibe reportes semestrales"]
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% FRONTEND + API GATEWAY
+    %% ═══════════════════════════════════════════════════════════════
+    FE["FRONTEND\nFlutter 3 — Web / Móvil / Tablet\nAmplify + CloudFront"]
+    GW["API Gateway — Amazon API Gateway\nJWT Authorizer · WAF · TLS · Rate Limit"]
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% DOMINIOS (cajas negras)
+    %% ═══════════════════════════════════════════════════════════════
+    D1["D1: IAM Service\nKeycloak 24 + NestJS\nK8s on-premise Colombia\nOAuth2 · MFA · RBAC"]
+    D2["D2: Usuarios y Cuentas\nJava / Spring Boot — EKS\nETL bancos · personas N y J"]
+    D3["D3: Empresas y Empleados\nJava / Spring Boot — EKS\nRegistro · carga masiva"]
+    D4["D4: Transferencias y Tx\nJava / Spring Boot — EKS\nP2P · ACH · Saga"]
+    D5["D5: Billetera Digital\nNestJS — EKS Fargate\nSaldo · pagos a terceros"]
+    D6["D6: Integraciones y Pasarelas\nNestJS — EKS Fargate\nAdapter · Circuit Breaker"]
+    D7["D7: Pagos Masivos\nJava / Spring Boot — EKS EC2\nLotes nómina · ShedLock"]
+    D8_OP["D8 on-prem: Reportes\nJava + Python 3.12\nK8s on-premise Colombia\nEvent Ingester · Report Gen"]
+    D8_AW["D8 AWS: Fraude + Dashboard\nManaged Flink + NestJS\nEKS Fargate\nCEP · listas B/G/N"]
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% BASES DE DATOS
+    %% ═══════════════════════════════════════════════════════════════
+    D1_DB[("PostgreSQL 16\non-prem · Patroni")]
+    D2_DB[("PostgreSQL 16\non-prem · vía DC")]
+    D3_DB[("Aurora\nPostgreSQL")]
+    D4_DB[("PostgreSQL 16\non-prem · vía DC")]
+    D5_DB[("Aurora\nPostgreSQL")]
+    D7_DB[("Aurora\nPostgreSQL")]
+    D8_CASS[("Cassandra 4.1\non-prem · inmutable")]
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% INFRAESTRUCTURA COMPARTIDA
+    %% ═══════════════════════════════════════════════════════════════
+    MSK["Amazon MSK — Kafka\nEvent Streaming\ndesacoplamiento · replay · particionamiento"]
+    REDIS[("ElastiCache Redis\nMulti-AZ")]
+    S3_STORE[("Amazon S3\nreportes regulatorios")]
+    OS[("OpenSearch\nMulti-AZ")]
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% SISTEMAS EXTERNOS
+    %% ═══════════════════════════════════════════════════════════════
+    EXT_PAS["Pasarelas de Pago\nPSE · DRUO · Apple Pay"]
+    EXT_ACH["Sistema ACH"]
+    EXT_TER["Terceros / Servicios"]
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% ACTORES → FRONTEND → API GATEWAY
+    %% ═══════════════════════════════════════════════════════════════
+    PN -->|"Web / Móvil · HTTPS"| FE
+    ADM -->|"Panel admin · HTTPS"| FE
+    EA -->|"Portal empresarial · HTTPS"| FE
+    FE --> GW
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% API GATEWAY → DOMINIOS
+    %% ═══════════════════════════════════════════════════════════════
+    GW -->|"Login / Refresh"| D1
+    GW -->|"Users · Accounts"| D2
+    GW -->|"Companies"| D3
+    GW -->|"POST /transfers"| D4
+    GW -->|"POST /wallet"| D5
+    GW -->|"POST /payroll"| D7
+    GW -->|"Dashboard / Audit"| D8_AW
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% SÍNCRONAS INTER-SERVICIO (Istio mTLS)
+    %% ═══════════════════════════════════════════════════════════════
+    D4 -->|"REST mTLS · valida cuentas"| D2
+    D5 -->|"REST mTLS · saldo combinado"| D2
+    D3 -->|"REST mTLS · empresa → cuentas"| D2
+    D2 -->|"REST mTLS · saldos tiempo real"| D6
+    D3 -->|"REST mTLS · resolve employee"| D6
+    D7 -->|"REST mTLS · empleados activos"| D3
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% DOMINIOS → BASES DE DATOS
+    %% ═══════════════════════════════════════════════════════════════
+    D1 --- D1_DB
+    D2 --- D2_DB
+    D3 --- D3_DB
+    D4 --- D4_DB
+    D5 --- D5_DB
+    D7 --- D7_DB
+    D8_OP --- D8_CASS
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% REDIS (compartido)
+    %% ═══════════════════════════════════════════════════════════════
+    D1 ---|"Sessions · Lockouts · vía DC"| REDIS
+    D2 ---|"Catálogo afiliados"| REDIS
+    D4 ---|"Listas B/G/N · bancos filiales"| REDIS
+    D8_AW ---|"SET listas fraude"| REDIS
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% KAFKA — PRODUCCIÓN DE EVENTOS
+    %% ═══════════════════════════════════════════════════════════════
+    D1 -->|"UserAuthenticated\nUserLocked\nUnauthorizedAccessAttempt"| MSK
+    D2 -->|"UserRegistered\nAccountSyncCompleted"| MSK
+    D3 -->|"CompanyImported"| MSK
+    D4 -->|"TransferInitiated / Settled / Failed\nTransferSentToACH"| MSK
+    D5 -->|"WalletDebited / Credited\nThirdPartyPaymentInitiated"| MSK
+    D6 -->|"PaymentGatewayResult / Failed\nACHResponseReceived"| MSK
+    D7 -->|"PayrollPaymentInitiated\nPayrollBatchCompleted"| MSK
+    D8_AW -->|"SuspiciousPatternDetected\nFraudListUpdated"| MSK
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% KAFKA — CONSUMO DE EVENTOS
+    %% ═══════════════════════════════════════════════════════════════
+    MSK -->|"SuspiciousPatternDetected"| D1
+    MSK -->|"ACHResponseReceived\nFraudListUpdated"| D4
+    MSK -->|"PaymentGatewayResult / Failed\nTransferACHResolved"| D5
+    MSK -->|"ThirdPartyPaymentInitiated\nTransferSentToACH\nMassivePaymentDispatched"| D6
+    MSK -->|"TransferSettled / Failed"| D7
+    MSK -->|"Todos los eventos D1–D7\nvía Direct Connect"| D8_OP
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% D8 ON-PREM ↔ D8 AWS
+    %% ═══════════════════════════════════════════════════════════════
+    D8_OP -->|"stream vía Direct Connect"| D8_AW
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% D6 ↔ SISTEMAS EXTERNOS
+    %% ═══════════════════════════════════════════════════════════════
+    D6 <-->|"HTTPS TLS 1.3"| EXT_PAS
+    D6 <-->|"HTTPS TLS 1.3"| EXT_ACH
+    D6 <-->|"HTTPS TLS 1.3"| EXT_TER
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% ENTRADAS EXTERNAS
+    %% ═══════════════════════════════════════════════════════════════
+    BF -->|"Archivos / API / SFTP\nsincronización diaria"| D2
+    D6 -->|"HTTPS · resolve employee"| API_EA
+
+    %% ═══════════════════════════════════════════════════════════════
+    %% REPORTES (D8)
+    %% ═══════════════════════════════════════════════════════════════
+    D8_OP -->|"reportes vía DC"| S3_STORE
+    D8_AW --> OS
+    D8_OP -->|"envío reportes"| D6
+    D6 -->|"HTTPS / SFTP · trimestrales"| BF
+    D6 -->|"HTTPS / SFTP · semestrales"| SF
+```
+
+**Leyenda de conexiones:**
+- **Línea continua con flecha (→):** flujo direccional (síncrono o asíncrono según etiqueta)
+- **Línea continua sin flecha (—):** acceso bidireccional (bases de datos, caché Redis)
+- **Doble flecha (↔):** comunicación bidireccional con sistema externo
+- **REST mTLS:** llamada síncrona entre microservicios vía Istio Service Mesh (no pasa por API Gateway)
+- **Kafka (MSK):** comunicación asíncrona por eventos; cada dominio publica y/o consume desde el broker central
+- **vía DC:** conexión que cruza Direct Connect (2× 1 Gbps) entre on-premise Colombia y AWS
 
 ---
 
