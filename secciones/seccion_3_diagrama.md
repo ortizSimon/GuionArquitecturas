@@ -1,9 +1,5 @@
 # Sección 3 — Diagrama de la arquitectura (Figura 1)
 
-> **Estado:** 🔄 En construcción  
-> **Estilo:** C4 Model — Level 2 (Container Diagram) en Mermaid  
-> **Trazabilidad:** Dominios D1–D8 (Sección 1) → RNF (Sección 2) → Stack (Sección 4)
-
 ---
 
 ## Figura 1 — Diagrama de contexto (C4 Level 2)
@@ -609,9 +605,4 @@ graph LR
 - **Saliente síncrono:** Dashboard API para consultas operacionales internas vía API Gateway
 
 
-## Pendientes
 
-- [ ] Renderizar el diagrama Mermaid y adjuntar imagen en el reporte final (usar mermaid.live o plugin VS Code)
-- [ ] Confirmar tecnologías definitivas por componente (alineado con Sección 4)
-- [ ] Agregar diagrama C4 Level 1 (System Context) si lo requiere el profesor
-- [x] Validar que todos los dominios de Sección 1 aparecen en el diagrama (D1–D8 completos)
