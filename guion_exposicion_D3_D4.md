@@ -203,3 +203,54 @@ Eso es todo de mi parte.
 > - Diagrama D3: Figura 4 (Sección 3)
 > - Diagrama D4: Figura 5 (Sección 3)
 > - Stack tecnológico D3/D4: Sección 4.3 y 4.9/4.10
+
+---
+---
+
+# Versión corta — 4 minutos
+
+> **Tip:** Habla directo, sin pausas largas. Cada bloque es aproximadamente 1 minuto.
+
+---
+
+## D3 — Empresas y Empleados `[~1.5 min]`
+
+Mi primer dominio es D3. Su responsabilidad es registrar las **15 empresas aliadas** y mantener únicamente la referencia mínima de cada empleado — solo el ID, la empresa, y si está activo. Ningún dato personal toca esta base de datos.
+
+Tiene tres RNF clave:
+
+**Interoperabilidad:** cada empresa aliada tiene su propio protocolo y esquema. D3 no se acopla a ninguna — delega la resolución de datos al dominio D6 via el patrón Adapter, con un Circuit Breaker aislado por empresa. Si la API de una empresa cae, las demás no se ven afectadas.
+
+**Carga masiva idempotente:** el onboarding de 35.000 registros de empleados debe completarse en menos de 10 minutos. Usamos Spring Batch con chunks de 500 y upsert por clave natural — ejecutar el mismo archivo dos veces produce el mismo resultado, cero duplicados.
+
+**Minimización de PII:** la base de datos de D3 no tiene ni una columna con nombre, cédula, salario o cuenta bancaria. Eso lo verificamos con un test automatizado en CI/CD que inspecciona el esquema. Los datos del empleado se resuelven en memoria en tiempo de pago, vía D6, y nunca se persisten.
+
+*[Señalar Figura 4]* El diagrama tiene cinco componentes: la **Company API** para registro y calendarios, la **Employee Ref API** que D7 consulta antes de cada nómina, **Spring Batch** para la carga masiva, **Aurora PostgreSQL** sin PII, y el **Outbox** que publica eventos a D8 para auditoría.
+
+---
+
+## D4 — Transferencias y Transacciones `[~2 min]`
+
+D4 es el núcleo de movimientos de dinero. Toda transferencia — P2P, interbancaria, ACH — pasa por aquí. Su base de datos es PostgreSQL on-premise en Colombia, por mandato regulatorio.
+
+Tiene seis RNF, los agrupe en cuatro ideas:
+
+**Consistencia + dualidad de canal:** D4 usa el patrón Saga coreografiada para garantizar que ningún fondo quede en estado intermedio. Si un destino falla, la compensación es automática. Y el LiquidationRouter decide el canal en tiempo real: si el destino es un banco filial, la liquidación es inmediata en menos de 500 ms. Si es no filial o internacional, va a ACH de forma diferida. El 100% de las respuestas incluyen el campo `settlement_type` para que el usuario sepa en qué canal está.
+
+**Resiliencia ACH:** si ACH se cae, las transferencias entre filiales no se ven afectadas para nada. Las diferidas que están en cola se reencolan automáticamente con idempotency key — cero duplicados. Hay una Dead Letter Queue en Kafka para los eventos fallidos y un job de reconciliación diario que asegura que ninguna transacción quede sin resolver.
+
+**Antifraude en línea:** antes de aprobar cualquier transferencia, el FraudChecker evalúa las listas blanca, gris y negra desde Redis con TTL de 60 segundos. El P99 de esa evaluación es menor a 200 milisegundos. Cuando D8 detecta un patrón nuevo, las listas se propagan a D4 en menos de 60 segundos.
+
+**Disponibilidad:** P95 end-to-end menor a 2 segundos, 99.9% de uptime mensual, con HPA en Kubernetes para escalar durante los picos de nómina.
+
+*[Señalar Figura 5]* El pipeline interno es: **Transfer API** → **FraudChecker** → **LiquidationRouter** → **Saga Coordinator** → **Transfer State Store** en PostgreSQL on-premise. Todo cambio de estado se publica a Kafka en la misma transacción ACID, y los consume D8 para auditoría, D6 para ACH, y D5 si la billetera es el destino.
+
+---
+
+## Cierre `[~15 seg]`
+
+D3 provee el directorio de empleados que D7 usa para ejecutar la nómina. Esos pagos de nómina terminan siendo transferencias que procesa D4. Todo queda trazado en D8.
+
+Eso es todo.
+
+---
