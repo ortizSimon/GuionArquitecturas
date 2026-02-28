@@ -7,6 +7,7 @@
 <img width="2960" height="1764" alt="ContextDiagram" src="https://github.com/user-attachments/assets/57cef95f-85b0-4992-ba74-e8c3d8b10b8f" />
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'fontSize': '20px', 'edgeLabelBackground': '#ffffff'}}}%%
 graph TB
     %% ═══════════════════════════════════════════════════════════════
     %% ACTORES
@@ -230,6 +231,7 @@ graph TB
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D1 y sus canales de comunicación con el resto del sistema.
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'fontSize': '20px', 'edgeLabelBackground': '#ffffff'}}}%%
 graph TB
 
     Cliente["Cliente (Web / Móvil / Portal Empresarial)"]
@@ -289,6 +291,7 @@ graph TB
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D2 y sus canales de comunicación con el resto del sistema.
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'fontSize': '20px', 'edgeLabelBackground': '#ffffff'}}}%%
 graph TB
 
     Cliente["Cliente Web / Móvil"]
@@ -360,6 +363,7 @@ graph TB
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D3 y sus canales de comunicación con el resto del sistema.
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'fontSize': '20px', 'edgeLabelBackground': '#ffffff'}}}%%
 graph LR
     %% ── Entradas (izquierda) ──────────────────────────────────────
     Admin["Administrador\n(portal admin)"]
@@ -427,6 +431,7 @@ graph LR
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D4 y sus canales de comunicación con el resto del sistema.
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'fontSize': '20px', 'edgeLabelBackground': '#ffffff'}}}%%
 graph LR
     %% ── Entradas (izquierda) ──────────────────────────────────────
     Client["Cliente\n(web / móvil)"]
@@ -495,6 +500,7 @@ graph LR
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D5 y sus canales de comunicación con el resto del sistema.
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'fontSize': '20px', 'edgeLabelBackground': '#ffffff'}}}%%
 graph LR
     %% ── Entradas (izquierda) ──────────────────────────────────────
     GW["API Gateway\n(JWT Authorizer)"]
@@ -555,6 +561,7 @@ graph LR
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D6 y sus canales de comunicación con el resto del sistema.
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'fontSize': '20px', 'edgeLabelBackground': '#ffffff'}}}%%
 graph LR
     %% ── Entradas (izquierda) ──────────────────────────────────────
     KAFKA_IN["Amazon MSK\n(eventos entrantes)"]
@@ -625,6 +632,7 @@ graph LR
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D7 y sus canales de comunicación con el resto del sistema.
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'fontSize': '20px', 'edgeLabelBackground': '#ffffff'}}}%%
 graph TB
 
     Empresa["Empresa (Portal Empresarial)"]
@@ -688,6 +696,7 @@ graph TB
 Este diagrama amplía la Figura 1 mostrando los componentes internos del dominio D8 y sus canales de comunicación con el resto del sistema.
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'fontSize': '20px', 'edgeLabelBackground': '#ffffff'}}}%%
 
 graph LR
   %% ── Entradas (izquierda) ──────────────────────────────────────
