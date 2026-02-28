@@ -48,28 +48,18 @@ El stack se seleccionó bajo tres criterios: alineación con los RNF del sistema
 
 | Herramienta o Tecnología | Descripción | Componente Asociado |
 |--------------------------|-------------|---------------------|
-| React 18 + Next.js 14 (AWS Amplify + CloudFront) | Aplicación web SPA con patrón BFF; CloudFront distribuye desde edge para cumplir el SLA de < 2 s en Colombia | Frontend web |
-| Flutter 3 + AWS Amplify SDK | Un solo codebase para iOS, Android y tablet ≥ 6"; compilación nativa sin WebView | App móvil / tablet |
-| Amazon API Gateway (HTTP API) + AWS WAF | Punto de entrada único al sistema: autenticación JWT, enrutamiento, rate-limiting y protección OWASP | API Gateway |
-| Amazon MSK (Apache Kafka administrado) | Mensajería asíncrona entre dominios; garantiza entrega, orden y replay de eventos críticos | Comunicación asíncrona entre todos los dominios |
-| Istio 1.x sobre EKS | Service mesh con mTLS automático entre pods, circuit breaker y retry policies | Comunicación síncrona inter-servicio segura |
-| Java 21 + Spring Boot 3 (Amazon EKS) | Runtime para dominios con lógica transaccional; incluye Spring Batch para cargas masivas y librerías Saga maduras | D3, D4, D7 |
-| Node.js 20 + NestJS (Amazon EKS + Fargate) | Alta concurrencia I/O para dominios orientados a integración y API; Fargate elimina la gestión de nodos | D2, D5, D6 |
-| Keycloak 24 + NestJS API (K8s on-premise Colombia) | Autenticación MFA, OAuth2/OIDC, gestión de sesiones y RBAC; co-localizado con su BD para cumplimiento regulatorio | D1 — Identidad y Acceso (IAM) |
-| Amazon Managed Service for Apache Flink | Stream processing stateful con ventanas de tiempo para detección de patrones de fraude en tiempo real | D8 — Antifraude en tiempo real |
-| Java 21 + Spring Boot 3 / Python 3.12 (K8s on-premise Colombia) | Ingestión de eventos en Cassandra (append-only) y generación de extractos trimestrales y reportes regulatorios | D8 — Event Ingester y Report Generator |
-| PostgreSQL 16 + Patroni + pgBackRest (on-premise Colombia) | Base de datos regulada con HA automático y backups; datos sensibles nunca salen del territorio colombiano | D1, D2, D4 — PII, credenciales y transacciones |
-| Amazon Aurora PostgreSQL (Multi-AZ, Serverless v2) | BD relacional administrada con failover automático < 30 s para datos de menor sensibilidad regulatoria | D3, D5, D7 |
-| Amazon ElastiCache for Redis (cluster Multi-AZ) | Caché distribuida sub-milisegundo: listas antifraude (TTL 60 s), bancos filiales (TTL 5 min), saldos e idempotencia | D1, D2, D4, D5, D7 |
-| Apache Cassandra 4.1 RF=3 (on-premise Colombia) | Audit log inmutable con escrituras append-only, retención ≥ 5 años y cifrado en reposo; exigido en Colombia | D8 — Histórico de auditoría |
-| Amazon OpenSearch Service | Indexación full-text del audit log para búsquedas operacionales y reportes de cumplimiento | D8 — Búsqueda y reportes |
-| Amazon S3 (SSE-KMS, versionado habilitado) | Almacenamiento cifrado de extractos trimestrales y reportes semestrales con lifecycle a Glacier | D8 — Reportes regulatorios |
-| AWS Secrets Manager + AWS KMS | Rotación automática de credenciales y cifrado en reposo para servicios en AWS | D3, D5, D6, D7, MSK, Redis |
-| HashiCorp Vault (on-premise) | Gestión de secretos y cifrado por columna para bases de datos reguladas on-premise | D1, D2, D4, D8 |
-| Amazon GuardDuty + AWS WAF + Falco | Detección de intrusiones en AWS y a nivel de contenedor/kernel en ambos clusters; hallazgos centralizados en Security Hub | Transversal — Seguridad e IDS |
-| Amazon EKS + Fargate + EC2 node groups | Orquestación de contenedores en AWS; Fargate para pods variables y EC2 para cargas fijas con HPA | D2, D3, D4, D5, D6, D7 en AWS |
-| Kubernetes 1.29 + MetalLB + Longhorn (on-premise) | Orquestación on-premise con balanceo L4 y almacenamiento persistente replicado para servicios regulados | D1, D8 on-premise Colombia |
-| AWS Direct Connect 2× 1 Gbps + VPN IPSec | Conectividad híbrida dedicada (~15–25 ms Colombia → AWS) con cifrado en tránsito | Enlace datacenter Colombia ↔ AWS |
-| Terraform (state en S3 + DynamoDB locking) | Infraestructura como código para gestionar AWS y on-premise desde un único repositorio | Infraestructura completa |
-| CloudWatch + Managed Grafana + X-Ray + OpenTelemetry Collector | Observabilidad unificada: métricas, logs y trazas distribuidas de todos los dominios incluyendo on-premise | Transversal — Observabilidad |
-| AWS CodePipeline + CodeBuild + Amazon ECR | Pipelines CI/CD con aprobaciones manuales antes de producción e imágenes de contenedor versionadas | Transversal — CI/CD |
+| React 18 + Next.js 14 / Flutter 3 | SPA web con patrón BFF y app móvil nativa para iOS, Android y tablet ≥ 6" desde un solo codebase | Frontend web y móvil |
+| Amazon API Gateway + AWS WAF | Punto de entrada único: autenticación JWT, enrutamiento, rate-limiting y protección OWASP | API Gateway |
+| Amazon MSK (Apache Kafka) | Mensajería asíncrona entre dominios; garantiza entrega, orden y replay de eventos | Comunicación entre todos los dominios |
+| Istio (service mesh) | mTLS automático entre microservicios, circuit breaker y retry policies | Comunicación síncrona segura |
+| Java 21 + Spring Boot 3 | Runtime para dominios financieros con lógica transaccional, Spring Batch y Saga | D3, D4, D7 |
+| Node.js 20 + NestJS | Alta concurrencia I/O para dominios de integración y API | D2, D5, D6 |
+| Keycloak 24 (on-premise Colombia) | Autenticación MFA, OAuth2/OIDC y RBAC; datos de sesión nunca salen del país | D1 — IAM |
+| PostgreSQL 16 + Patroni (on-premise Colombia) | Base de datos regulada con alta disponibilidad; almacena PII, credenciales y transacciones financieras | D1, D2, D4 |
+| Amazon Aurora PostgreSQL | BD relacional administrada en AWS para datos de menor sensibilidad regulatoria | D3, D5, D7 |
+| Amazon ElastiCache for Redis | Caché sub-milisegundo: listas antifraude, bancos filiales, saldos e idempotencia | D2, D4, D5, D7 |
+| Apache Cassandra 4.1 (on-premise Colombia) | Audit log inmutable append-only con retención ≥ 5 años, exigido por regulación colombiana | D8 — Auditoría |
+| Amazon EKS + Kubernetes on-premise | Orquestación de contenedores en AWS (D2–D7) y on-premise Colombia (D1, D8) con HPA | Todos los microservicios |
+| AWS Direct Connect 2× 1 Gbps | Conectividad híbrida dedicada entre datacenter Colombia y AWS con ~15–25 ms de latencia | Enlace Colombia ↔ AWS |
+| Terraform | Infraestructura como código para gestionar AWS y on-premise desde un único repositorio | Infraestructura completa |
+| CloudWatch + Grafana + AWS X-Ray | Observabilidad unificada: métricas, logs y trazas distribuidas de todos los dominios | Transversal |
