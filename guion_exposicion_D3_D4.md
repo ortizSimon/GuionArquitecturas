@@ -219,7 +219,7 @@ Mi primer dominio es D3. Su responsabilidad es registrar las **15 empresas aliad
 
 Tiene tres RNF, cada uno con sus funciones de ajuste:
 
-**Interoperabilidad:** cada empresa aliada tiene su propio protocolo y esquema. D3 no se acopla a ninguna — delega la resolución de datos al dominio D6 vía el patrón Adapter, con un Circuit Breaker aislado por empresa. Si la API de una empresa cae, las demás no se ven afectadas. Las funciones de ajuste que verifican esto son: P95 de resolución del dato del empleado menor a 1.5 segundos, y 0 impacto cruzado entre empresas ante fallo de una de ellas.
+**Interoperabilidad:** cada empresa aliada tiene su propio protocolo y esquema. D3 no se acopla a ninguna — delega la resolución de datos al dominio D6 vía el patrón Adapter, con un Circuit Breaker aislado por empresa. Si la API de una empresa cae, las demás no se ven afectadas. Las funciones de ajuste son: el 95% de las consultas al API de la empresa responden en menos de 1.5 segundos, y si una empresa se cae, las otras 14 no lo sienten — cero impacto cruzado.
 
 **Carga masiva idempotente:** el onboarding de 35.000 registros debe completarse en menos de 10 minutos usando Spring Batch con chunks de 500. La función de ajuste clave es la idempotencia: ejecutar el mismo archivo dos veces produce resultado idéntico — 0 duplicados. Y el SLA global del sistema no se degrada durante el batch porque el job corre de forma asíncrona.
 
